@@ -1,19 +1,28 @@
+mod component;
 mod dialog;
 mod file;
 mod gates;
 
 use dialog::Dialog;
 use file::OpenDialog;
+use component::*;
 
 use eframe::{egui, epi};
 
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
+	component: Option<usize>,
+	components: [Box<dyn ComponentPlacer>; 2],
+	component_direction: Direction,
 }
 
 impl App {
 	pub fn new() -> Self {
-		Self { dialog: None }
+		let components: [Box<dyn ComponentPlacer>; 2] = [
+			Box::new(gates::AndGate),
+			Box::new(gates::OrGate),
+		];
+		Self { dialog: None, component: None, components, component_direction: Direction::Up }
 	}
 }
 
@@ -27,6 +36,10 @@ impl epi::App for App {
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
 
 		use egui::*;
+
+		if ctx.input().key_pressed(Key::R) {
+			self.component_direction = self.component_direction.rotate_clockwise();
+		}
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
 			menu::bar(ui, |ui| {
@@ -55,11 +68,16 @@ impl epi::App for App {
 		}
 
 		egui::SidePanel::left("side_panel").show(ctx, |ui| {
-			ui.heading("Gates");
+			ui.heading("Components");
 
-			for name in ["Add", "Or", "Xor", "Not"] {
-				if ui.button(name).clicked() {
-
+			if ui.button("wire").clicked() {
+				self.component = None;
+			} else {
+				for (i, c) in self.components.iter().enumerate() {
+					if ui.button(c.name()).clicked() {
+						self.component = Some(i);
+						break;
+					}
 				}
 			}
 		});
@@ -78,8 +96,11 @@ impl epi::App for App {
 			let color = e.dragged().then(|| Color32::RED).unwrap_or(Color32::GREEN);
 			e.hover_pos().map(|pos| {
 				let pos = ((pos.to_vec2() / 16.0).round() * 16.0).to_pos2();
-				gates::draw_or(&paint, pos, gates::Direction::Up);
-				paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
+				if let Some(c) = self.component {
+					self.components[c].draw(&paint, pos, self.component_direction);
+				} else {
+					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
+				}
 			});
 		});
 	}
