@@ -1,150 +1,86 @@
-mod eframe_template {
+mod dialog;
+mod file;
+mod gates;
 
-	mod app {
+use dialog::Dialog;
+use file::OpenDialog;
 
-		use eframe::{egui, epi};
+use eframe::{egui, epi};
 
-		/// We derive Deserialize/Serialize so we can persist app state on shutdown.
-		#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
-		#[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
-		pub struct TemplateApp {
-			// Example stuff:
-			label: String,
-
-			// this how you opt-out of serialization of a member
-			#[cfg_attr(feature = "persistence", serde(skip))]
-			value: f32,
-		}
-
-		impl Default for TemplateApp {
-			fn default() -> Self {
-				Self {
-					// Example stuff:
-					label: "Hello World!".to_owned(),
-					value: 2.7,
-				}
-			}
-		}
-
-		impl epi::App for TemplateApp {
-			fn name(&self) -> &str {
-				"eframe template"
-			}
-
-			/// Called once before the first frame.
-			fn setup(
-				&mut self,
-				_ctx: &egui::CtxRef,
-				_frame: &mut epi::Frame<'_>,
-				_storage: Option<&dyn epi::Storage>,
-			) {
-				// Load previous app state (if any).
-				// Note that you must enable the `persistence` feature for this to work.
-				#[cfg(feature = "persistence")]
-				if let Some(storage) = _storage {
-					*self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-				}
-			}
-
-			/// Called by the frame work to save state before shutdown.
-			/// Note that you must enable the `persistence` feature for this to work.
-			#[cfg(feature = "persistence")]
-			fn save(&mut self, storage: &mut dyn epi::Storage) {
-				epi::set_value(storage, epi::APP_KEY, self);
-			}
-
-			/// Called each time the UI needs repainting, which may be many times per second.
-			/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-			fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-				let Self { label, value } = self;
-
-				// Examples of how to create different panels and windows.
-				// Pick whichever suits you.
-				// Tip: a good default choice is to just keep the `CentralPanel`.
-				// For inspiration and more examples, go to https://emilk.github.io/egui
-
-				egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-					// The top panel is often a good place for a menu bar:
-					egui::menu::bar(ui, |ui| {
-						egui::menu::menu(ui, "File", |ui| {
-							if ui.button("Quit").clicked() {
-								frame.quit();
-							}
-						});
-					});
-				});
-
-				egui::SidePanel::left("side_panel").show(ctx, |ui| {
-					ui.heading("Side Panel");
-
-					ui.horizontal(|ui| {
-						ui.label("Write something: ");
-						ui.text_edit_singleline(label);
-					});
-
-					ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-					if ui.button("Increment").clicked() {
-						*value += 1.0;
-					}
-
-					ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-						ui.horizontal(|ui| {
-							ui.spacing_mut().item_spacing.x = 0.0;
-							ui.label("powered by ");
-							ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-							ui.label(" and ");
-							ui.hyperlink_to("eframe", "https://github.com/emilk/egui/tree/master/eframe");
-						});
-					});
-				});
-
-				egui::CentralPanel::default().show(ctx, |ui| {
-					// The central panel the region left after adding TopPanel's and SidePanel's
-
-					ui.heading("eframe template");
-					ui.hyperlink("https://github.com/emilk/eframe_template");
-					ui.add(egui::github_link_file!(
-						"https://github.com/emilk/eframe_template/blob/master/",
-						"Source code."
-					));
-					egui::warn_if_debug_build(ui);
-				});
-
-				if false {
-					egui::Window::new("Window").show(ctx, |ui| {
-						ui.label("Windows can be moved by dragging them.");
-						ui.label("They are automatically sized based on contents.");
-						ui.label("You can turn on resizing and scrolling if you like.");
-						ui.label("You would normally chose either panels OR windows.");
-					});
-				}
-			}
-		}
-	}
-
-	pub use app::TemplateApp;
-
-	// ----------------------------------------------------------------------------
-	// When compiling for web:
-
-	#[cfg(target_arch = "wasm32")]
-	use eframe::wasm_bindgen::{self, prelude::*};
-
-	/// This is the entry-point for all the web-assembly.
-	/// This is called once from the HTML.
-	/// It loads the app, installs some callbacks, then returns.
-	/// You can add more callbacks like this if you want to call in to your code.
-	#[cfg(target_arch = "wasm32")]
-	#[wasm_bindgen]
-	pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
-		let app = TemplateApp::default();
-		eframe::start_web(canvas_id, Box::new(app))
-	}
-
+pub struct App {
+	dialog: Option<Box<dyn Dialog>>,
 }
 
-fn main() {
-    let app = eframe_template::TemplateApp::default();
-    let native_options = eframe::NativeOptions::default();
-    eframe::run_native(Box::new(app), native_options);
+impl App {
+	pub fn new() -> Self {
+		Self { dialog: None }
+	}
+}
+
+impl epi::App for App {
+	fn name(&self) -> &str {
+		"Logimu"
+	}
+
+	/// Called each time the UI needs repainting, which may be many times per second.
+	/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
+	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
+
+		use egui::*;
+
+		TopBottomPanel::top("top_panel").show(ctx, |ui| {
+			menu::bar(ui, |ui| {
+				menu::menu(ui, "File", |ui| {
+					if ui.button("New").clicked() {
+					}
+					if ui.button("Open").clicked() {
+						self.dialog = Some(Box::new(OpenDialog {}));
+					}
+					if ui.button("Close").clicked() {
+						frame.quit()
+					}
+					if ui.button("Save").clicked() {
+					}
+					if ui.button("Save as").clicked() {
+					}
+				});
+			});
+		});
+
+		if let Some(dialog) = self.dialog.as_mut() {
+			let r = Window::new(dialog.name())
+				.anchor(Align2([Align::Center; 2]), Vec2::ZERO)
+				.show(ctx, |ui| dialog.show(ui));
+			r.map(|r| r.inner.map(|r| r.then(|| self.dialog = None)));
+		}
+
+		egui::SidePanel::left("side_panel").show(ctx, |ui| {
+			ui.heading("Gates");
+
+			for name in ["Add", "Or", "Xor", "Not"] {
+				if ui.button(name).clicked() {
+
+				}
+			}
+		});
+
+		CentralPanel::default().show(ctx, |ui| {
+			use epaint::*;
+			let rect = ui.max_rect();
+			let paint = ui.painter_at(rect);
+			for y in (0..rect.height() as u16 + 100).step_by(16) {
+				for x in (0..rect.width() as u16 + 100).step_by(16) {
+					let pos = Pos2::new(f32::from(x), f32::from(y));
+					paint.circle(pos, 1.0, Color32::GRAY, Stroke::none());
+				}
+			}
+			let e = ui.interact(ui.max_rect(), ui.id(), Sense::drag());
+			let color = e.dragged().then(|| Color32::RED).unwrap_or(Color32::GREEN);
+			e.hover_pos().map(|pos| {
+				let pos = ((pos.to_vec2() / 16.0).round() * 16.0).to_pos2();
+				gates::draw_or(&paint, pos, gates::Direction::Up);
+				paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
+			});
+		});
+	}
 }
