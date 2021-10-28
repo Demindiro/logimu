@@ -123,11 +123,84 @@ impl Component for NotGate {
 	}
 }
 
+pub struct In {
+	bits: NonZeroU8,	
+}
+
+impl In {
+	pub fn new(bits: NonZeroU8) -> Self {
+		Self { bits }
+	}
+}
+
+impl Component for In {
+	fn input_count(&self) -> usize {
+		0
+	}
+	
+	fn input_type(&self, _: usize) -> Option<InputType> {
+		None
+	}
+
+	fn output_count(&self) -> usize {
+		1
+	}
+	
+	fn output_type(&self, output: usize) -> Option<OutputType> {
+		(output == 0).then(|| OutputType { bits: self.bits })
+	}
+
+	fn generate_ir(&self, _: &[usize], _: &[usize], _: &mut dyn FnMut(IrOp)) {}
+}
+
+pub struct Out {
+	bits: NonZeroU8,	
+}
+
+impl Out {
+	pub fn new(bits: NonZeroU8) -> Self {
+		Self { bits }
+	}
+}
+
+impl Component for Out {
+	fn input_count(&self) -> usize {
+		1
+	}
+	
+	fn input_type(&self, input: usize) -> Option<InputType> {
+		(input == 0).then(|| InputType { bits: self.bits })
+	}
+
+	fn output_count(&self) -> usize {
+		0
+	}
+	
+	fn output_type(&self, _: usize) -> Option<OutputType> {
+		None
+	}
+
+	fn generate_ir(&self, _: &[usize], _: &[usize], _: &mut dyn FnMut(IrOp)) {}
+}
+
 #[cfg(test)]
 mod test {
 	use super::*;
 	use super::super::ir::interpreter;
 
+	/// ```
+	/// i0 --+-------v
+	///      |      AND --> NOT
+	/// i1 --|--+----^       |
+	///      |  |            v
+	///      +--|----v      AND --> o0
+	///      |  |    OR -----^
+	///      |  +----^
+	///      |  |
+	///      +--|----v
+	///         |   XOR ----------> o1
+	///         +----^
+	/// ```
 	#[test]
 	fn manual_xor() {
 		let mut ir = Vec::new();
