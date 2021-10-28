@@ -1,4 +1,7 @@
-use super::{ComponentPlacer, Direction};
+use super::ComponentPlacer;
+use crate::simulator;
+use crate::circuit::Direction;
+use core::num::NonZeroU8;
 use eframe::egui::{Painter, Pos2, Stroke, Color32, Rect, Vec2, Shape};
 use eframe::egui::paint::{CircleShape, Mesh, Vertex};
 
@@ -31,6 +34,10 @@ impl ComponentPlacer for AndGate {
 		painter.line_segment([top_left, bottom_left], stroke);
 		painter.line_segment([top_left   , top_left    + offt], stroke);
 		painter.line_segment([bottom_left, bottom_left + offt], stroke);
+	}
+
+	fn instance(&self) -> Box<dyn simulator::Component> {
+		Box::new(simulator::AndGate::new(simulator::NonZeroOneU8::new(2).unwrap(), NonZeroU8::new(1).unwrap()))
 	}
 }
 
@@ -82,5 +89,9 @@ impl ComponentPlacer for OrGate {
 		v.push(v[0]);
 		painter.add(Shape::Mesh(mesh));
 		painter.add(Shape::line(v, stroke));
+	}
+
+	fn instance(&self) -> Box<dyn simulator::Component> {
+		Box::new(simulator::OrGate::new(simulator::NonZeroOneU8::new(2).unwrap(), NonZeroU8::new(1).unwrap()))
 	}
 }

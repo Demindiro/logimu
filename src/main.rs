@@ -1,3 +1,7 @@
+#![feature(box_syntax)]
+
+
+mod circuit;
 mod gui;
 mod simulator;
 
