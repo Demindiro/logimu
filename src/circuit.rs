@@ -1,13 +1,20 @@
-use super::simulator::Component;
+use crate::impl_dyn;
+use super::simulator;
+use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle};
 
 use core::mem;
 use core::ops::{Add, Mul};
-use std::rc::Rc;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Point {
 	pub x: u16,
 	pub y: u16,
+}
+
+impl Point {
+	pub const fn new(x: u16, y: u16) -> Self {
+		Self { x, y }
+	}
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -93,6 +100,10 @@ pub struct Wire {
 }
 
 impl Wire {
+	pub fn new(from: Point, to: Point) -> Self {
+		Self { from, to }
+	}
+
 	/// Check if this wire intersects with a point.
 	pub fn intersect_point(&self, point: Point) -> bool {
 		// Check if the point is inside the AABB of the wire.
@@ -126,12 +137,32 @@ impl Wire {
 }
 
 /// A component with fixed input & output locations
-pub trait CircuitComponent {
+pub trait CircuitComponent
+where
+	Self: simulator::Component,
+{
 	/// All the inputs of this component.
 	fn inputs(&self) -> &[PointOffset];
 
 	/// All the outputs of this component.
 	fn outputs(&self) -> &[PointOffset];
+}
+
+impl_dyn! {
+	Component for &dyn CircuitComponent {
+		input_count() -> usize;
+		input_type(input: usize) -> Option<InputType>;
+		output_count() -> usize;
+		output_type(output: usize) -> Option<OutputType>;
+		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
+	}
+}
+
+impl_dyn! {
+	CircuitComponent for &dyn CircuitComponent {
+		inputs() -> &[PointOffset];
+		outputs() -> &[PointOffset];
+	}
 }
 
 /// A collection of interconnected wires and components.
@@ -149,7 +180,9 @@ where
 	/// All wires in this circuit.
 	wires: Vec<Wire>,
 	/// All components in this circuit.
-	components: Vec<(C, Point, Direction)>,
+	components: Vec<(GraphNodeHandle, Point, Direction)>,
+	/// A graph connecting all nodes. Used for IR generation.
+	graph: Graph<C>,
 }
 
 /// A single zone in a circuit.
@@ -197,8 +230,11 @@ where
 	}
 
 	pub fn add_component(&mut self, component: C, position: Point, direction: Direction) -> usize {
+		// Add to graph
 		let index = self.components.len();
-		self.components.push((component, position, direction));
+		let handle = self.graph.add(component);
+		self.components.push((handle, position, direction));
+
 		// TODO add to zones. This requires per component AABBs.
 		index
 	}
@@ -209,6 +245,59 @@ where
 			aabb,
 			index: 0,
 		}
+	}
+
+	pub fn generate_ir(&mut self) -> (Vec<IrOp>, Box<[(usize, usize)]>, Box<[(usize, usize)]>, usize) {
+		// Connect components using wire information
+		for w in self.wires.iter() {
+			let (mut inp, mut outp) = (None, None);
+			// TODO handle overlapping ports
+			for p in [w.from, w.to].iter() {
+				self.find_ports_at_internal(*p, |c, i| inp = Some((c, i)), |c, i| outp = Some((c, i)));
+				if let (Some((in_n, in_i)), Some((out_n, out_i))) = (inp, outp) {
+					assert_ne!((in_n, in_i), (out_n, out_i), "overlapping in & out port");
+					self.graph.connect((out_n, out_i), (in_n, in_i)).unwrap();
+				}
+			}
+		}
+
+		let (ir, inputs, outputs, mem_size) = self.graph.generate_ir();
+
+		// TODO map GNH directly to CH somehow
+		let inputs = inputs.into_iter().map(|&(h, i)| {
+			(self.components.iter().enumerate().find(|(_, &(g, ..))| g == h).unwrap().0, i)
+		}).collect();
+		let outputs = outputs.into_iter().map(|&(h, i)| {
+			(self.components.iter().enumerate().find(|(_, &(g, ..))| g == h).unwrap().0, i)
+		}).collect();
+
+		(ir, inputs, outputs, mem_size)
+	}
+
+	fn find_ports_at_internal<'a, F, G>(&'a self, pos: Point, mut in_callback: F, mut out_callback: G)
+	where
+		F: FnMut(GraphNodeHandle, usize),
+		G: FnMut(GraphNodeHandle, usize),
+	{
+		//self.intersect_zone(position).find_ports_at(self, position, in_callback, out_callback);
+		for &(h, p, d) in self.components.iter() {
+			let c = self.graph.get(h).unwrap();
+			for (i, &inp) in c.inputs().iter().enumerate() {
+				(d * inp)
+					.and_then(|inp| p + inp)
+					.map(|inp| (inp == pos).then(|| in_callback(h, i)));
+			}
+			for (i, &outp) in c.outputs().iter().enumerate() {
+				(d * outp)
+					.and_then(|outp| p + outp)
+					.map(|outp| (outp == pos).then(|| out_callback(h, i)));
+			}
+		}
+	}
+
+	fn intersect_zone<'a>(&'a self, position: Point) -> &'a Zone {
+		let (x, y) = (usize::from(position.x) / 64, usize::from(position.y) / 64);
+		&self.zones[y][x]
 	}
 }
 
@@ -224,6 +313,7 @@ where
 			zones: MATRIX,
 			wires: Vec::new(),
 			components: Vec::new(),
+			graph: Graph::new(),
 		}
 	}
 }
@@ -232,7 +322,7 @@ impl Zone {
 	const COMPONENT_FLAG: usize = 1 << (mem::size_of::<usize>() - 1);
 
 	/// Get all wires and components at a given point.
-	pub fn intersect_point<C>(
+	fn intersect_point<C>(
 		&self,
 		circuit: &Circuit<C>,
 		position: Point,
@@ -254,9 +344,17 @@ impl Zone {
 		}
 	}
 
-	pub fn add_wire(&mut self, index: usize) {
+	fn add_wire(&mut self, index: usize) {
 		assert_eq!(index & Self::COMPONENT_FLAG, 0);
 		self.nodes.push(index);
+	}
+
+	fn find_ports_at<'a, F, C>(&self, circuit: &'a Circuit<C>, position: Point, mut in_callback: F, mut out_callback: F)
+	where
+		F: FnMut(&'a C, usize),
+		C: CircuitComponent,
+	{
+		todo!()
 	}
 }
 
@@ -305,7 +403,7 @@ where
 		// TODO check AABBs.
 		while let Some(c) = self.circuit.components.get(self.index) {
 			self.index += 1;
-			return Some((&c.0, c.1, c.2));
+			return Some((self.circuit.graph.get(c.0).unwrap(), c.1, c.2));
 		}
 		None
 	}
@@ -314,6 +412,104 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
+	use core::num::NonZeroU8;
+	use simulator::{In, Out, AndGate as And, OrGate as Or, NotGate as Not, XorGate as Xor, NonZeroOneU8};
 
+	/// ```
+	/// i0 --+-------v
+	///      |      AND --> NOT
+	/// i1 --|--+----^       |
+	///      |  |            v
+	///      +--|----v      AND --> o0
+	///      |  |    OR -----^
+	///      |  +----^
+	///      |  |
+	///      +--|----v
+	///         |   XOR ----------> o1
+	///         +----^
+	/// ```
+	///
+	/// NOT:
+	/// ```
+	/// I -> *0* -> O
+	/// ```
+	///
+	/// AND/OR/XOR:
+	/// ```
+	/// I1 -> *--
+	///       -0* -> O
+	/// I2 -> *--
+	/// ```
+	#[test]
+	fn manual_xor() {
 
+		let mut circuit = Box::<Circuit<&dyn CircuitComponent>>::default();
+
+		let bits = NonZeroU8::new(1).unwrap();
+		let inputs = NonZeroOneU8::new(2).unwrap();
+		let i0 = In::new(bits);
+		let i1 = In::new(bits);
+		let l0 = And::new(inputs, bits);
+		let l1 = Not::new(bits);
+		let r0 = Or::new(inputs, bits);
+		let lr = And::new(inputs, bits);
+		let o0 = Out::new(bits);
+		let cp = Xor::new(inputs, bits);
+		let o1 = Out::new(bits);
+
+		// Inputs
+		let i0 = circuit.add_component(&i0, Point::new(0, 0), Direction::Right);
+		let i1 = circuit.add_component(&i1, Point::new(0, 4), Direction::Right);
+
+		// Connect inputs to AND
+		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 0)));
+		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 2)));
+		// Place AND and NOT
+		circuit.add_component(&l0, Point::new(4, 1), Direction::Right);
+		circuit.add_component(&l1, Point::new(8, 0), Direction::Right);
+		// Connect AND to NOT
+		circuit.add_wire(Wire::new(Point::new(5, 1), Point::new(7, 0)));
+
+		// Place OR
+		circuit.add_component(&r0, Point::new(4, 4), Direction::Right);
+		// Connect inputs to OR
+		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 3)));
+		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 5)));
+		
+		// Connect AND & OR to AND and connect AND to output
+		circuit.add_wire(Wire::new(Point::new(9, 0), Point::new(11, 0)));
+		circuit.add_wire(Wire::new(Point::new(5, 4), Point::new(11, 2)));
+		circuit.add_wire(Wire::new(Point::new(13, 1), Point::new(16, 0)));
+		// Place AND and output
+		circuit.add_component(&lr, Point::new(12, 1), Direction::Right);
+		let o0 = circuit.add_component(&o0, Point::new(16, 0), Direction::Right);
+
+		// Place XOR and output
+		circuit.add_component(&cp, Point::new(4, 8), Direction::Right);
+		let o1 = circuit.add_component(&o1, Point::new(16, 8), Direction::Right);
+		// Connect inputs to XOR and XOR to output
+		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 7)));
+		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 9)));
+		circuit.add_wire(Wire::new(Point::new(5, 8), Point::new(16, 8)));
+
+		let (ir, inputs, outputs, mem_size) = circuit.generate_ir();
+
+		let (a, b) = (0b1100, 0b0110);
+		let mut mem = [0; 32];
+		let mem = &mut mem[..mem_size];
+		let ai = inputs.iter().find(|v| v.0 == i0).unwrap().1;
+		let bi = inputs.iter().find(|v| v.0 == i1).unwrap().1;
+		mem[ai] = a;
+		mem[bi] = b;
+
+		let xi = outputs.iter().find(|v| v.0 == o0).unwrap().1;
+		let yi = outputs.iter().find(|v| v.0 == o1).unwrap().1;
+
+		simulator::ir::interpreter::run(&ir, mem);
+
+		assert_eq!(mem[ai], a);
+		assert_eq!(mem[bi], b);
+		assert_eq!(mem[xi], a ^ b);
+		assert_eq!(mem[yi], a ^ b);
+	}
 }

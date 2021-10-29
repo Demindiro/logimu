@@ -9,32 +9,81 @@ use component::*;
 
 use crate::circuit;
 
-use std::rc::Rc;
 use eframe::{egui, epi};
 
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
-	component: Option<usize>,
-	components: [Rc<dyn ComponentPlacer>; 2],
+	component: Option<Box<dyn ComponentPlacer>>,
+	components: [(&'static str, fn() -> Box<dyn ComponentPlacer>); 2],
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
-	circuit: Box<circuit::Circuit<Rc<dyn ComponentPlacer>>>,
+	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
 }
 
 impl App {
 	pub fn new() -> Self {
-		let components: [Rc<dyn ComponentPlacer>; 2] = [
-			Rc::new(gates::AndGate),
-			Rc::new(gates::OrGate),
+		let components: [(&'static str, fn() -> Box<dyn ComponentPlacer>); 2] = [
+			("and", || todo!()),
+			("or", || todo!()),
 		];
-		Self {
+		let mut s = Self {
 			dialog: None,
 			component: None,
 			components,
 			component_direction: circuit::Direction::Up,
 			wire_start: None,
 			circuit: Default::default(),
-		}
+		};
+
+		let circuit = &mut s.circuit;
+
+		use circuit::*;
+
+		//let (i0, i1, l0, l1, r0, lr, o0, cp, o1) = (In, In, And, Not, Or, And, Out, Xor, Out);
+		let (l0, r0, lr, cp) = (
+			s.components[0].clone(),
+			s.components[1].clone(),
+			s.components[0].clone(),
+			s.components[1].clone(),
+		);
+
+		// Inputs
+		//let i0 = circuit.add_component(&i0, Point::new(0, 0), Direction::Right);
+		//let i1 = circuit.add_component(&i1, Point::new(0, 4), Direction::Right);
+
+		// Connect inputs to AND
+		circuit.add_wire(Wire::new(Point::new(1, 0), Point::new(4, 0)));
+		circuit.add_wire(Wire::new(Point::new(1, 4), Point::new(4, 1)));
+
+		// Place AND and NOT
+		//let l0 = circuit.add_component(l0, Point::new(4, 0), Direction::Right);
+		//let l1 = circuit.add_component(l1, Point::new(8, 0), Direction::Right);
+		// Connect AND to NOT
+		circuit.add_wire(Wire::new(Point::new(5, 0), Point::new(8, 0)));
+
+		// Place OR
+		//let r0 = circuit.add_component(r0, Point::new(4, 4), Direction::Right);
+		// Connect inputs to OR
+		circuit.add_wire(Wire::new(Point::new(1, 0), Point::new(4, 4)));
+		circuit.add_wire(Wire::new(Point::new(1, 4), Point::new(4, 5)));
+		
+		// Connect AND & OR to AND and connect AND to output
+		circuit.add_wire(Wire::new(Point::new(9, 0), Point::new(12, 0)));
+		circuit.add_wire(Wire::new(Point::new(5, 4), Point::new(12, 1)));
+		circuit.add_wire(Wire::new(Point::new(13, 0), Point::new(16, 0)));
+		// Place AND and output
+		//let lr = circuit.add_component(lr, Point::new(12, 0), Direction::Right);
+		//let o0 = circuit.add_component(o0, Point::new(16, 0), Direction::Right);
+
+		// Place XOR and output
+		//let cp = circuit.add_component(cp, Point::new(4, 8), Direction::Right);
+		//let o1 = circuit.add_component(&o1, Point::new(16, 8), Direction::Right);
+		// Connect inputs to XOR and XOR to output
+		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(4, 8)));
+		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(4, 9)));
+		circuit.add_wire(Wire::new(Point::new(5, 8), Point::new(16, 8)));
+
+		s
 	}
 }
 
@@ -86,8 +135,8 @@ impl epi::App for App {
 				self.component = None;
 			} else {
 				for (i, c) in self.components.iter().enumerate() {
-					if ui.button(c.name()).clicked() {
-						self.component = Some(i);
+					if ui.button(c.0).clicked() {
+						self.component = Some(c.1());
 						break;
 					}
 				}
@@ -98,6 +147,7 @@ impl epi::App for App {
 			use epaint::*;
 			let rect = ui.max_rect();
 			let paint = ui.painter_at(rect);
+			let paint = ui.painter();
 			for y in (rect.min.y as u16..rect.max.y as u16).step_by(16) {
 				for x in (rect.min.x as u16..rect.max.x as u16).step_by(16) {
 					let pos = Pos2::new(f32::from(x), f32::from(y));
@@ -142,11 +192,13 @@ impl epi::App for App {
 				let point = pos2point(pos);
 				let pos = point2pos(point);
 
-				if let Some(c) = self.component.map(|c| &self.components[c]) {
+				if let Some(c) = self.component.take() {
 					c.draw(&paint, pos, self.component_direction);
 
 					if e.clicked() {
-						self.circuit.add_component(c.clone(), point, self.component_direction);
+						self.circuit.add_component(c, point, self.component_direction);
+					} else {
+						self.component = Some(c);
 					}
 				} else {
 					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));

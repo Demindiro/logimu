@@ -1,3 +1,4 @@
+use crate::impl_dyn;
 use super::ir::IrOp;
 use core::num::NonZeroU8;
 
@@ -19,6 +20,16 @@ pub trait Component {
 	fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp));
 }
 
+impl_dyn! {
+	Component for Box<dyn Component> {
+		input_count() -> usize;
+		input_type(input: usize) -> Option<InputType>;
+		output_count() -> usize;
+		output_type(output: usize) -> Option<OutputType>;
+		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
+	}
+}
+
 /// The type of an input.
 pub struct InputType {
 	/// How many bits this input has.
@@ -32,6 +43,7 @@ pub struct OutputType {
 }
 
 /// A u8 that is larger than 2.
+#[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 pub struct NonZeroOneU8(NonZeroU8);
 

@@ -1,9 +1,9 @@
-use crate::simulator::Component;
-use crate::circuit;
-use std::rc::Rc;
+use crate::impl_dyn;
+use crate::simulator::{Component, InputType, OutputType, ir::IrOp};
+use crate::circuit::{CircuitComponent, Direction, PointOffset};
 use eframe::egui::{Painter, Vec2, Pos2};
 
-impl circuit::Direction {
+impl Direction {
 	pub fn rotate_vec2(self, v: Vec2) -> Vec2 {
 		match self {
 			Self::Right => Vec2::new( v.x,  v.y),
@@ -16,22 +16,26 @@ impl circuit::Direction {
 
 pub trait ComponentPlacer
 where
-	Self: circuit::CircuitComponent,
+	Self: CircuitComponent,
 {
 	fn name(&self) -> &str;
 
-	fn draw(&self, painter: &Painter, position: Pos2, direction: circuit::Direction);
-
-	/// Create a new instance of this component.
-	fn instance(&self) -> Box<dyn Component>;
+	fn draw(&self, painter: &Painter, position: Pos2, direction: Direction);
 }
 
-impl circuit::CircuitComponent for Rc<dyn ComponentPlacer> {
-	fn inputs(&self) -> &[circuit::PointOffset] {
-		self.as_ref().inputs()
+impl_dyn! {
+	Component for Box<dyn ComponentPlacer> {
+		input_count() -> usize;
+		input_type(input: usize) -> Option<InputType>;
+		output_count() -> usize;
+		output_type(output: usize) -> Option<OutputType>;
+		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
 	}
+}
 
-	fn outputs(&self) -> &[circuit::PointOffset] {
-		self.as_ref().outputs()
+impl_dyn! {
+	CircuitComponent for Box<dyn ComponentPlacer> {
+		inputs() -> &[PointOffset];
+		outputs() -> &[PointOffset];
 	}
 }
