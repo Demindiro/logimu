@@ -1,5 +1,4 @@
-#![feature(box_syntax)]
-
+#![feature(trait_upcasting)]
 
 mod circuit;
 mod gui;

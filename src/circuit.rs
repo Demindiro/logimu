@@ -1,6 +1,7 @@
 use super::simulator::Component;
 
 use core::mem;
+use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Point {
@@ -87,6 +88,12 @@ impl Wire {
 	}
 }
 
+/// A component with fixed input & output locations
+pub trait CircuitComponent {
+	/// A ID per component. This should be unique for all components.
+	fn id(&self) -> usize;
+}
+
 /// A collection of interconnected wires and components.
 pub struct Circuit {
 	/// A grid is used to speed up intersection lookups.
@@ -99,7 +106,7 @@ pub struct Circuit {
 	/// All wires in this circuit.
 	wires: Vec<Wire>,
 	/// All components in this circuit.
-	components: Vec<(Box<dyn Component>, Point, Direction)>,
+	components: Vec<(Rc<dyn CircuitComponent>, Point, Direction)>,
 }
 
 /// A single zone in a circuit.
@@ -143,7 +150,7 @@ impl Circuit {
 		}
 	}
 
-	pub fn add_component(&mut self, component: Box<dyn Component>, position: Point, direction: Direction) -> usize {
+	pub fn add_component(&mut self, component: Rc<dyn CircuitComponent>, position: Point, direction: Direction) -> usize {
 		let index = self.components.len();
 		self.components.push((component, position, direction));
 		// TODO add to zones. This requires per component AABBs.
@@ -228,7 +235,7 @@ pub struct ComponentIter<'a> {
 }
 
 impl<'a> Iterator for ComponentIter<'a> {
-	type Item = (&'a dyn Component, Point, Direction);
+	type Item = (&'a dyn CircuitComponent, Point, Direction);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		// TODO check AABBs.

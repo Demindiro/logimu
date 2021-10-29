@@ -9,12 +9,13 @@ use component::*;
 
 use crate::circuit;
 
+use std::rc::Rc;
 use eframe::{egui, epi};
 
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
 	component: Option<usize>,
-	components: [Box<dyn ComponentPlacer>; 2],
+	components: [Rc<dyn ComponentPlacer>; 2],
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit>,
@@ -22,9 +23,9 @@ pub struct App {
 
 impl App {
 	pub fn new() -> Self {
-		let components: [Box<dyn ComponentPlacer>; 2] = [
-			Box::new(gates::AndGate),
-			Box::new(gates::OrGate),
+		let components: [Rc<dyn ComponentPlacer>; 2] = [
+			Rc::new(gates::AndGate),
+			Rc::new(gates::OrGate),
 		];
 		Self {
 			dialog: None,
@@ -121,7 +122,7 @@ impl epi::App for App {
 
 			// Draw existing components
 			for (c, p, d) in self.circuit.components(aabb) {
-				self.components[0].draw(&paint, point2pos(p), d);
+				self.components[c.id()].draw(&paint, point2pos(p), d);
 			}
 
 			// Draw existing wires
@@ -142,7 +143,7 @@ impl epi::App for App {
 					c.draw(&paint, pos, self.component_direction);
 
 					if e.clicked() {
-						self.circuit.add_component(c.instance(), point, self.component_direction);
+						self.circuit.add_component(c.clone(), point, self.component_direction);
 					}
 				} else {
 					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));

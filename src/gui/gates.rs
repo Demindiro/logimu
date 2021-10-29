@@ -1,11 +1,17 @@
 use super::ComponentPlacer;
 use crate::simulator;
-use crate::circuit::Direction;
+use crate::circuit::{Direction, CircuitComponent};
 use core::num::NonZeroU8;
 use eframe::egui::{Painter, Pos2, Stroke, Color32, Rect, Vec2, Shape};
 use eframe::egui::paint::{CircleShape, Mesh, Vertex};
 
 pub struct AndGate;
+
+impl CircuitComponent for AndGate {
+	fn id(&self) -> usize {
+		0
+	}
+}
 
 impl ComponentPlacer for AndGate {
 	fn name(&self) -> &str {
@@ -42,6 +48,12 @@ impl ComponentPlacer for AndGate {
 }
 
 pub struct OrGate;
+
+impl CircuitComponent for OrGate {
+	fn id(&self) -> usize {
+		1
+	}
+}
 
 impl ComponentPlacer for OrGate {
 	fn name(&self) -> &str {

@@ -1,5 +1,6 @@
 use crate::simulator::Component;
 use crate::circuit;
+use core::any::Any;
 use eframe::egui::{Painter, Vec2, Pos2};
 
 impl circuit::Direction {
@@ -13,7 +14,10 @@ impl circuit::Direction {
 	}
 }
 
-pub trait ComponentPlacer{
+pub trait ComponentPlacer
+where
+	Self: circuit::CircuitComponent,
+{
 	fn name(&self) -> &str;
 
 	fn draw(&self, painter: &Painter, position: Pos2, direction: circuit::Direction);
