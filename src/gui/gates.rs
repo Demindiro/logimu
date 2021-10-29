@@ -1,6 +1,6 @@
 use super::ComponentPlacer;
 use crate::simulator;
-use crate::circuit::{Direction, CircuitComponent};
+use crate::circuit::{Direction, CircuitComponent, PointOffset};
 use core::num::NonZeroU8;
 use eframe::egui::{Painter, Pos2, Stroke, Color32, Rect, Vec2, Shape};
 use eframe::egui::paint::{CircleShape, Mesh, Vertex};
@@ -10,6 +10,16 @@ pub struct AndGate;
 impl CircuitComponent for AndGate {
 	fn id(&self) -> usize {
 		0
+	}
+
+	fn inputs(&self) -> &[PointOffset] {
+		const I: [PointOffset; 2] = [PointOffset::new(-1, -1), PointOffset::new(-1, 1)];
+		&I
+	}
+
+	fn outputs(&self) -> &[PointOffset] {
+		const O: [PointOffset; 1] = [PointOffset::new(1, 0)];
+		&O
 	}
 }
 
@@ -52,6 +62,16 @@ pub struct OrGate;
 impl CircuitComponent for OrGate {
 	fn id(&self) -> usize {
 		1
+	}
+
+	fn inputs(&self) -> &[PointOffset] {
+		const I: [PointOffset; 2] = [PointOffset::new(0, -1), PointOffset::new(0, 1)];
+		&I
+	}
+
+	fn outputs(&self) -> &[PointOffset] {
+		const O: [PointOffset; 1] = [PointOffset::new(2, 0)];
+		&O
 	}
 }
 

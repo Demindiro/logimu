@@ -1,12 +1,35 @@
 use super::simulator::Component;
 
 use core::mem;
+use core::ops::{Add, Mul};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Point {
 	pub x: u16,
 	pub y: u16,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PointOffset {
+	pub x: i8,
+	pub y: i8,
+}
+
+impl PointOffset {
+	pub const fn new(x: i8, y: i8) -> Self {
+		Self { x, y }
+	}
+}
+
+impl Add<PointOffset> for Point {
+	type Output = Option<Self>;
+
+	fn add(self, rhs: PointOffset) -> Self::Output {
+		let x = i32::from(self.x) + i32::from(rhs.x);
+		let y = i32::from(self.y) + i32::from(rhs.y);
+		x.try_into().and_then(|x| y.try_into().map(|y| Self { x, y })).ok()
+	}
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -25,6 +48,20 @@ impl Direction {
 			Self::Left => Self::Up,
 			Self::Up => Self::Right,
 		}
+	}
+}
+
+impl Mul<PointOffset> for Direction {
+	type Output = Option<PointOffset>;
+
+	fn mul(self, rhs: PointOffset) -> Self::Output {
+		let (x, y) = match self {
+			Self::Right => (rhs.x, rhs.y),
+			Self::Down => (rhs.y.checked_neg()?, rhs.x),
+			Self::Left => (rhs.x.checked_neg()?, rhs.y.checked_neg()?),
+			Self::Up => (rhs.y, rhs.x.checked_neg()?),
+		};
+		Some(PointOffset { x, y })
 	}
 }
 
@@ -92,6 +129,12 @@ impl Wire {
 pub trait CircuitComponent {
 	/// A ID per component. This should be unique for all components.
 	fn id(&self) -> usize;
+
+	/// All the inputs of this component.
+	fn inputs(&self) -> &[PointOffset];
+
+	/// All the outputs of this component.
+	fn outputs(&self) -> &[PointOffset];
 }
 
 /// A collection of interconnected wires and components.

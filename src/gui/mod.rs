@@ -123,6 +123,9 @@ impl epi::App for App {
 			// Draw existing components
 			for (c, p, d) in self.circuit.components(aabb) {
 				self.components[c.id()].draw(&paint, point2pos(p), d);
+				for &po in c.inputs().into_iter().chain(c.outputs()) {
+					(d * po).map(|po| (p + po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN)));
+				}
 			}
 
 			// Draw existing wires
