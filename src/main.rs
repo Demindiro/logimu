@@ -1,5 +1,3 @@
-#![feature(trait_upcasting)]
-
 mod circuit;
 mod gui;
 mod simulator;

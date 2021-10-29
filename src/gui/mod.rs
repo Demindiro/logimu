@@ -18,7 +18,7 @@ pub struct App {
 	components: [Rc<dyn ComponentPlacer>; 2],
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
-	circuit: Box<circuit::Circuit>,
+	circuit: Box<circuit::Circuit<Rc<dyn ComponentPlacer>>>,
 }
 
 impl App {
@@ -122,7 +122,7 @@ impl epi::App for App {
 
 			// Draw existing components
 			for (c, p, d) in self.circuit.components(aabb) {
-				self.components[c.id()].draw(&paint, point2pos(p), d);
+				c.draw(&paint, point2pos(p), d);
 				for &po in c.inputs().into_iter().chain(c.outputs()) {
 					(d * po).map(|po| (p + po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN)));
 				}

@@ -127,9 +127,6 @@ impl Wire {
 
 /// A component with fixed input & output locations
 pub trait CircuitComponent {
-	/// A ID per component. This should be unique for all components.
-	fn id(&self) -> usize;
-
 	/// All the inputs of this component.
 	fn inputs(&self) -> &[PointOffset];
 
@@ -138,7 +135,10 @@ pub trait CircuitComponent {
 }
 
 /// A collection of interconnected wires and components.
-pub struct Circuit {
+pub struct Circuit<C>
+where
+	C: CircuitComponent,
+{
 	/// A grid is used to speed up intersection lookups.
 	///
 	/// To save on memory, the grid is split into zones.
@@ -149,7 +149,7 @@ pub struct Circuit {
 	/// All wires in this circuit.
 	wires: Vec<Wire>,
 	/// All components in this circuit.
-	components: Vec<(Rc<dyn CircuitComponent>, Point, Direction)>,
+	components: Vec<(C, Point, Direction)>,
 }
 
 /// A single zone in a circuit.
@@ -161,7 +161,10 @@ pub struct Zone {
 	nodes: Vec<usize>,
 }
 
-impl Circuit {
+impl<C> Circuit<C>
+where
+	C: CircuitComponent,
+{
 	pub fn new() -> Self {
 		Self::default()
 	}
@@ -185,7 +188,7 @@ impl Circuit {
 		index
 	}
 
-	pub fn wires(&self, aabb: Aabb) -> WireIter {
+	pub fn wires(&self, aabb: Aabb) -> WireIter<C> {
 		WireIter {
 			circuit: self,
 			aabb,
@@ -193,14 +196,14 @@ impl Circuit {
 		}
 	}
 
-	pub fn add_component(&mut self, component: Rc<dyn CircuitComponent>, position: Point, direction: Direction) -> usize {
+	pub fn add_component(&mut self, component: C, position: Point, direction: Direction) -> usize {
 		let index = self.components.len();
 		self.components.push((component, position, direction));
 		// TODO add to zones. This requires per component AABBs.
 		index
 	}
 
-	pub fn components(&self, aabb: Aabb) -> ComponentIter {
+	pub fn components(&self, aabb: Aabb) -> ComponentIter<C> {
 		ComponentIter {
 			circuit: self,
 			aabb,
@@ -209,7 +212,10 @@ impl Circuit {
 	}
 }
 
-impl Default for Circuit {
+impl<C> Default for Circuit<C>
+where
+	C: CircuitComponent,
+{
 	fn default() -> Self {
 		const ZONE: Zone = Zone { nodes: Vec::new() };
 		const ARRAY: [Zone; 1024] = [ZONE; 1024];
@@ -226,13 +232,16 @@ impl Zone {
 	const COMPONENT_FLAG: usize = 1 << (mem::size_of::<usize>() - 1);
 
 	/// Get all wires and components at a given point.
-	pub fn intersect_point(
+	pub fn intersect_point<C>(
 		&self,
-		circuit: &Circuit,
+		circuit: &Circuit<C>,
 		position: Point,
 		mut wire_callback: impl FnMut(usize),
 		mut component_callback: impl FnMut(usize),
-	) {
+	)
+	where
+		C: CircuitComponent,
+	{
 		for &n in self.nodes.iter() {
 			if n & !Self::COMPONENT_FLAG == 0 {
 				// Wire
@@ -251,13 +260,19 @@ impl Zone {
 	}
 }
 
-pub struct WireIter<'a> {
-	circuit: &'a Circuit,
+pub struct WireIter<'a, C>
+where
+	C: CircuitComponent,
+{
+	circuit: &'a Circuit<C>,
 	aabb: Aabb,
 	index: usize,
 }
 
-impl<'a> Iterator for WireIter<'a> {
+impl<'a, C> Iterator for WireIter<'a, C>
+where
+	C: CircuitComponent,
+{
 	type Item = &'a Wire;
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -271,20 +286,26 @@ impl<'a> Iterator for WireIter<'a> {
 	}
 }
 
-pub struct ComponentIter<'a> {
-	circuit: &'a Circuit,
+pub struct ComponentIter<'a, C>
+where
+	C: CircuitComponent,
+{
+	circuit: &'a Circuit<C>,
 	aabb: Aabb,
 	index: usize,
 }
 
-impl<'a> Iterator for ComponentIter<'a> {
-	type Item = (&'a dyn CircuitComponent, Point, Direction);
+impl<'a, C> Iterator for ComponentIter<'a, C>
+where
+	C: CircuitComponent,
+{
+	type Item = (&'a C, Point, Direction);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		// TODO check AABBs.
 		while let Some(c) = self.circuit.components.get(self.index) {
 			self.index += 1;
-			return Some((&*c.0, c.1, c.2));
+			return Some((&c.0, c.1, c.2));
 		}
 		None
 	}

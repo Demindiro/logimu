@@ -1,6 +1,6 @@
 use crate::simulator::Component;
 use crate::circuit;
-use core::any::Any;
+use std::rc::Rc;
 use eframe::egui::{Painter, Vec2, Pos2};
 
 impl circuit::Direction {
@@ -24,4 +24,14 @@ where
 
 	/// Create a new instance of this component.
 	fn instance(&self) -> Box<dyn Component>;
+}
+
+impl circuit::CircuitComponent for Rc<dyn ComponentPlacer> {
+	fn inputs(&self) -> &[circuit::PointOffset] {
+		self.as_ref().inputs()
+	}
+
+	fn outputs(&self) -> &[circuit::PointOffset] {
+		self.as_ref().outputs()
+	}
 }
