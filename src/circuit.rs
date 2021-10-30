@@ -204,17 +204,21 @@ where
 		let Aabb { min, max } = wire.aabb();
 		let index = self.wires.len();
 
+		// Add wire to existing nexus if it connects with one.
+		// Otherwise create a new nexus and add the wire to it.
 		let mut nexus = None;
 		self.intersect_point(wire.from, |i| nexus = Some(self.wires[i].1), |_| todo!());
 		self.intersect_point(wire.to, |i| {
 			nexus.is_some().then(|| todo!("handle connecting two separate wires with new wire"));
 			nexus = Some(self.wires[i].1);
 		}, |_| todo!());
-
 		let nexus = nexus.unwrap_or_else(|| self.graph.new_nexus(Vec::new()));
 		self.graph.nexus_mut(nexus).unwrap().userdata.push(index);
-
 		self.wires.push((wire, nexus));
+
+		// Check if this wire connects with any components. If so, connect these components
+		// to this wire's nexus.
+		self.connect_wire(self.wires.len() - 1);
 
 		let (min_x, min_y) = (min.x / 64, min.y / 64);
 		// Round down, then count up to max including max so zero-width/height
@@ -254,20 +258,7 @@ where
 	}
 
 	pub fn generate_ir(&mut self) -> (Vec<IrOp>, usize) {
-		// Connect components using wire information
-		for (w, nexus) in self.wires.iter() {
-			// TODO handle overlapping ports (i.e. ports without wire)
-			for p in [w.from, w.to].iter() {
-				let (mut inp, mut outp) = (None, None);
-				self.find_ports_at_internal(*p, |c, i| inp = Some((c, i)), |c, i| outp = Some((c, i)));
-				if let Some((node, port)) = inp {
-					self.graph.connect(Port::Input { node, port }, *nexus).unwrap();
-				}
-				if let Some((node, port)) = outp {
-					self.graph.connect(Port::Output { node, port }, *nexus).unwrap();
-				}
-			}
-		}
+		self.connect_wire(usize::MAX);
 
 		let (ir, mem_size) = self.graph.generate_ir();
 
@@ -301,6 +292,24 @@ where
 
 	fn intersect_point(&self, position: Point, wire_callback: impl FnMut(usize), component_callback: impl FnMut(usize)) {
 		self.intersect_zone(position).intersect_point(self, position, wire_callback, component_callback);
+	}
+
+	fn connect_wire(&mut self, wire: usize) {
+		// TODO iterating all wires is wasteful.
+		// Connect components using wire information
+		for (w, nexus) in self.wires.iter() {
+			// TODO handle overlapping ports (i.e. ports without wire)
+			for p in [w.from, w.to].iter() {
+				let (mut inp, mut outp) = (None, None);
+				self.find_ports_at_internal(*p, |c, i| inp = Some((c, i)), |c, i| outp = Some((c, i)));
+				if let Some((node, port)) = inp {
+					self.graph.connect(Port::Input { node, port }, *nexus).unwrap();
+				}
+				if let Some((node, port)) = outp {
+					self.graph.connect(Port::Output { node, port }, *nexus).unwrap();
+				}
+			}
+		}
 	}
 }
 

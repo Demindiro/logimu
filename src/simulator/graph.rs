@@ -209,17 +209,26 @@ where
 	pub fn connect(&mut self, port: Port, nexus: NexusHandle) -> Result<Option<NexusHandle>, ConnectError> {
 		let nod = self.nodes.get_mut(port.node().0).and_then(Entry::as_occupied_mut).ok_or(ConnectError::InvalidNode)?;
 		let nex = self.nexuses.get_mut(nexus.0).and_then(Entry::as_occupied_mut).ok_or(ConnectError::InvalidNexus)?;
-		let e = match port {
+		match port {
 			Port::Input { port, node } => {
 				nex.outputs.push(node);
-				nod.inputs.get_mut(port)
+				let e = nod.inputs.get_mut(port).ok_or(ConnectError::InvalidPort)?;
+				if let Some(e) = e {
+					let n = &mut self.nexuses[e.0].as_occupied_mut().unwrap();
+					n.outputs.remove(n.outputs.iter().position(|e| *e == node).unwrap());
+				}
+				Ok(e.replace(nexus))
 			}
 			Port::Output { port, node } => {
 				nex.inputs.push(node);
-				nod.outputs.get_mut(port)
+				let e = nod.outputs.get_mut(port).ok_or(ConnectError::InvalidPort)?;
+				if let Some(e) = e {
+					let n = &mut self.nexuses[e.0].as_occupied_mut().unwrap();
+					n.inputs.remove(n.inputs.iter().position(|e| *e == node).unwrap());
+				}
+				Ok(e.replace(nexus))
 			}
-		}.ok_or(ConnectError::InvalidPort)?;
-		Ok(e.replace(nexus))
+		}
 	}
 
 	pub fn disconnect(&mut self, port: Port) -> Result<(), ConnectError> {

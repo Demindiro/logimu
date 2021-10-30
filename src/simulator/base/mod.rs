@@ -137,7 +137,7 @@ impl Component for NotGate {
 
 pub struct In {
 	bits: NonZeroU8,
-	index: usize,
+	pub index: usize,
 }
 
 impl In {
@@ -170,7 +170,7 @@ impl Component for In {
 
 pub struct Out {
 	bits: NonZeroU8,	
-	index: usize,
+	pub index: usize,
 }
 
 impl Out {

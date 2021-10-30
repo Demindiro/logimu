@@ -21,7 +21,15 @@ where
 {
 	fn name(&self) -> &str;
 
-	fn draw(&self, painter: &Painter, position: Pos2, direction: Direction);
+	fn draw(&self, painter: &Painter, position: Pos2, direction: Direction, inputs: &[usize], outputs: &[usize]);
+
+	fn external_input(&self) -> Option<usize> {
+		None
+	}
+	
+	fn external_output(&self) -> Option<usize> {
+		None
+	}
 }
 
 impl_dyn! {

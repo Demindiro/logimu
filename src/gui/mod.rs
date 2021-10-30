@@ -9,6 +9,7 @@ use component::*;
 
 use crate::circuit;
 use crate::simulator;
+use crate::simulator::ir::IrOp;
 
 use core::any::TypeId;
 use eframe::{egui, epi};
@@ -31,8 +32,12 @@ pub struct App {
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
-	input_counter: usize,
-	output_counter: usize,
+	
+	inputs: Vec<usize>,
+	outputs: Vec<usize>,
+	memory: Box<[usize]>,
+	// TODO we shouldn't delay updates by a frame.
+	needs_update: bool,
 }
 
 impl App {
@@ -44,8 +49,11 @@ impl App {
 			component_direction: circuit::Direction::Up,
 			wire_start: None,
 			circuit: Default::default(),
-			input_counter: 0,
-			output_counter: 0,
+
+			inputs: Vec::new(),
+			outputs: Vec::new(),
+			memory: Box::default(),
+			needs_update: false,
 		}
 	}
 }
@@ -58,6 +66,24 @@ impl epi::App for App {
 	/// Called each time the UI needs repainting, which may be many times per second.
 	/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
+
+		// TODO make components clickable instead of using numpads
+		{
+			use egui::Key::*;
+			for (i, b) in [Num0, Num1, Num2, Num3, Num4].iter().enumerate() {
+				if ctx.input().key_pressed(*b) {
+					self.inputs.get_mut(i).map(|e| *e = !*e);
+				}
+			}
+		}
+
+		// TODO don't run circuit every frame
+		let (ir, mem_size) = self.circuit.generate_ir();
+		if mem_size != self.memory.len() {
+			self.memory = core::iter::repeat(0).take(mem_size).collect::<Box<_>>();
+			dbg!(&ir);
+		}
+		simulator::ir::interpreter::run(&ir, &mut self.memory, &self.inputs, &mut self.outputs);
 
 		use egui::*;
 
@@ -94,16 +120,16 @@ impl epi::App for App {
 		egui::SidePanel::left("side_panel").show(ctx, |ui| {
 			ui.heading("Components");
 
-			ui.label(format!("Inputs: {}", self.input_counter));
-			ui.label(format!("Outputs: {}", self.output_counter));
+			ui.label(format!("Inputs: {}", self.inputs.len()));
+			ui.label(format!("Outputs: {}", self.outputs.len()));
 
 			let bits = core::num::NonZeroU8::new(1).unwrap();
 			if ui.button("wire").clicked() {
 				self.component = None;
 			} else if ui.button("in").clicked() {
-				self.component = Some(Box::new(simulator::In::new(bits, self.input_counter)));
+				self.component = Some(Box::new(simulator::In::new(bits, self.inputs.len())));
 			} else if ui.button("out").clicked() {
-				self.component = Some(Box::new(simulator::Out::new(bits, self.output_counter)));
+				self.component = Some(Box::new(simulator::Out::new(bits, self.outputs.len())));
 			} else {
 				for c in COMPONENTS.iter() {
 					if ui.button(c.0).clicked() {
@@ -143,7 +169,7 @@ impl epi::App for App {
 
 			// Draw existing components
 			for (c, p, d) in self.circuit.components(aabb) {
-				c.draw(&paint, point2pos(p), d);
+				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
 				for &po in c.inputs().into_iter().chain(c.outputs()) {
 					(d * po).map(|po| (p + po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN)));
 				}
@@ -164,12 +190,13 @@ impl epi::App for App {
 				let pos = point2pos(point);
 
 				if let Some(c) = self.component.take() {
-					c.draw(&paint, pos, self.component_direction);
+					c.draw(&paint, pos, self.component_direction, &self.inputs, &self.outputs);
 
 					if e.clicked() {
-						(c.type_id() == TypeId::of::<simulator::In>()).then(|| self.input_counter += 1);
-						(c.type_id() == TypeId::of::<simulator::Out>()).then(|| self.output_counter += 1);
+						(c.type_id() == TypeId::of::<simulator::In>()).then(|| self.inputs.push(0));
+						(c.type_id() == TypeId::of::<simulator::Out>()).then(|| self.outputs.push(0));
 						self.circuit.add_component(c, point, self.component_direction);
+						self.needs_update = true;
 					} else {
 						self.component = Some(c);
 					}
@@ -182,6 +209,7 @@ impl epi::App for App {
 						if e.drag_released() {
 							self.circuit.add_wire(circuit::Wire { from: start, to: point });
 							self.wire_start = None;
+							self.needs_update = true;
 						}
 					} else {
 						if e.drag_started() {
