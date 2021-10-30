@@ -8,13 +8,24 @@ use file::OpenDialog;
 use component::*;
 
 use crate::circuit;
+use crate::simulator;
 
 use eframe::{egui, epi};
+
+const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
+	fn a() -> core::num::NonZeroU8 { core::num::NonZeroU8::new(1).unwrap() }
+	fn b() -> simulator::NonZeroOneU8 { simulator::NonZeroOneU8::new(2).unwrap() }
+	&[
+		("and", || Box::new(simulator::AndGate::new(b(), a()))),
+		("or", || Box::new(simulator::OrGate::new(b(), a()))),
+		("not", || Box::new(simulator::NotGate::new(a()))),
+		("xor", || Box::new(simulator::XorGate::new(b(), a()))),
+	]
+};
 
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
 	component: Option<Box<dyn ComponentPlacer>>,
-	components: [(&'static str, fn() -> Box<dyn ComponentPlacer>); 2],
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
@@ -22,68 +33,14 @@ pub struct App {
 
 impl App {
 	pub fn new() -> Self {
-		let components: [(&'static str, fn() -> Box<dyn ComponentPlacer>); 2] = [
-			("and", || todo!()),
-			("or", || todo!()),
-		];
-		let mut s = Self {
+		use crate::simulator::*;
+		Self {
 			dialog: None,
 			component: None,
-			components,
 			component_direction: circuit::Direction::Up,
 			wire_start: None,
 			circuit: Default::default(),
-		};
-
-		let circuit = &mut s.circuit;
-
-		use circuit::*;
-
-		//let (i0, i1, l0, l1, r0, lr, o0, cp, o1) = (In, In, And, Not, Or, And, Out, Xor, Out);
-		let (l0, r0, lr, cp) = (
-			s.components[0].clone(),
-			s.components[1].clone(),
-			s.components[0].clone(),
-			s.components[1].clone(),
-		);
-
-		// Inputs
-		//let i0 = circuit.add_component(&i0, Point::new(0, 0), Direction::Right);
-		//let i1 = circuit.add_component(&i1, Point::new(0, 4), Direction::Right);
-
-		// Connect inputs to AND
-		circuit.add_wire(Wire::new(Point::new(1, 0), Point::new(4, 0)));
-		circuit.add_wire(Wire::new(Point::new(1, 4), Point::new(4, 1)));
-
-		// Place AND and NOT
-		//let l0 = circuit.add_component(l0, Point::new(4, 0), Direction::Right);
-		//let l1 = circuit.add_component(l1, Point::new(8, 0), Direction::Right);
-		// Connect AND to NOT
-		circuit.add_wire(Wire::new(Point::new(5, 0), Point::new(8, 0)));
-
-		// Place OR
-		//let r0 = circuit.add_component(r0, Point::new(4, 4), Direction::Right);
-		// Connect inputs to OR
-		circuit.add_wire(Wire::new(Point::new(1, 0), Point::new(4, 4)));
-		circuit.add_wire(Wire::new(Point::new(1, 4), Point::new(4, 5)));
-		
-		// Connect AND & OR to AND and connect AND to output
-		circuit.add_wire(Wire::new(Point::new(9, 0), Point::new(12, 0)));
-		circuit.add_wire(Wire::new(Point::new(5, 4), Point::new(12, 1)));
-		circuit.add_wire(Wire::new(Point::new(13, 0), Point::new(16, 0)));
-		// Place AND and output
-		//let lr = circuit.add_component(lr, Point::new(12, 0), Direction::Right);
-		//let o0 = circuit.add_component(o0, Point::new(16, 0), Direction::Right);
-
-		// Place XOR and output
-		//let cp = circuit.add_component(cp, Point::new(4, 8), Direction::Right);
-		//let o1 = circuit.add_component(&o1, Point::new(16, 8), Direction::Right);
-		// Connect inputs to XOR and XOR to output
-		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(4, 8)));
-		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(4, 9)));
-		circuit.add_wire(Wire::new(Point::new(5, 8), Point::new(16, 8)));
-
-		s
+		}
 	}
 }
 
@@ -134,7 +91,7 @@ impl epi::App for App {
 			if ui.button("wire").clicked() {
 				self.component = None;
 			} else {
-				for (i, c) in self.components.iter().enumerate() {
+				for (i, c) in COMPONENTS.iter().enumerate() {
 					if ui.button(c.0).clicked() {
 						self.component = Some(c.1());
 						break;
