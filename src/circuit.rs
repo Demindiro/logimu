@@ -1,6 +1,6 @@
 use crate::impl_dyn;
 use super::simulator;
-use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle};
+use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle, GraphIter};
 
 use core::mem;
 use core::ops::{Add, Mul};
@@ -179,10 +179,8 @@ where
 	zones: [[Zone; 1024]; 1024],
 	/// All wires in this circuit.
 	wires: Vec<Wire>,
-	/// All components in this circuit.
-	components: Vec<(GraphNodeHandle, Point, Direction)>,
 	/// A graph connecting all nodes. Used for IR generation.
-	graph: Graph<C>,
+	graph: Graph<C, (Point, Direction)>,
 }
 
 /// A single zone in a circuit.
@@ -231,16 +229,16 @@ where
 
 	pub fn add_component(&mut self, component: C, position: Point, direction: Direction) -> usize {
 		// Add to graph
-		let index = self.components.len();
-		let handle = self.graph.add(component);
-		self.components.push((handle, position, direction));
+		let handle = self.graph.add(component, (position, direction));
+		assert_eq!(handle.into_raw() & (1 << mem::size_of_val(&handle.into_raw())), 0);
 
 		// TODO add to zones. This requires per component AABBs.
-		index
+		handle.into_raw()
 	}
 
 	pub fn components(&self, aabb: Aabb) -> ComponentIter<C> {
 		ComponentIter {
+			iter: self.graph.nodes(),
 			circuit: self,
 			aabb,
 			index: 0,
@@ -263,13 +261,8 @@ where
 
 		let (ir, inputs, outputs, mem_size) = self.graph.generate_ir();
 
-		// TODO map GNH directly to CH somehow
-		let inputs = inputs.into_iter().map(|&(h, i)| {
-			(self.components.iter().enumerate().find(|(_, &(g, ..))| g == h).unwrap().0, i)
-		}).collect();
-		let outputs = outputs.into_iter().map(|&(h, i)| {
-			(self.components.iter().enumerate().find(|(_, &(g, ..))| g == h).unwrap().0, i)
-		}).collect();
+		let inputs = inputs.into_iter().map(|&(h, i)| (h.into_raw(), i)).collect();
+		let outputs = outputs.into_iter().map(|&(h, i)| (h.into_raw(), i)).collect();
 
 		(ir, inputs, outputs, mem_size)
 	}
@@ -280,8 +273,7 @@ where
 		G: FnMut(GraphNodeHandle, usize),
 	{
 		//self.intersect_zone(position).find_ports_at(self, position, in_callback, out_callback);
-		for &(h, p, d) in self.components.iter() {
-			let c = self.graph.get(h).unwrap();
+		for (c, h, &(p, d)) in self.graph.nodes() {
 			for (i, &inp) in c.inputs().iter().enumerate() {
 				(d * inp)
 					.and_then(|inp| p + inp)
@@ -312,7 +304,6 @@ where
 		Self {
 			zones: MATRIX,
 			wires: Vec::new(),
-			components: Vec::new(),
 			graph: Graph::new(),
 		}
 	}
@@ -388,6 +379,8 @@ pub struct ComponentIter<'a, C>
 where
 	C: CircuitComponent,
 {
+	// TODO avoid iter, use zones
+	iter: GraphIter<'a, C, (Point, Direction)>,
 	circuit: &'a Circuit<C>,
 	aabb: Aabb,
 	index: usize,
@@ -401,9 +394,9 @@ where
 
 	fn next(&mut self) -> Option<Self::Item> {
 		// TODO check AABBs.
-		while let Some(c) = self.circuit.components.get(self.index) {
+		while let Some((c, _, &(p, d))) = self.iter.next() {
 			self.index += 1;
-			return Some((self.circuit.graph.get(c.0).unwrap(), c.1, c.2));
+			return Some((c, p, d));
 		}
 		None
 	}

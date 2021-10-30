@@ -2,11 +2,11 @@ use super::*;
 use core::mem;
 
 /// A graph of connected components
-pub struct Graph<C>
+pub struct Graph<C, U>
 where
 	C: Component,
 {
-	nodes: Vec<Entry<Node<C>>>,
+	nodes: Vec<Entry<Node<C, U>>>,
 	free: Option<usize>,
 	outputs: Vec<usize>,
 	inputs: Vec<usize>,
@@ -46,13 +46,14 @@ impl<T> Entry<T> {
 	}
 }
 
-struct Node<C>
+struct Node<C, U>
 where
 	C: Component,
 {
 	component: C,
 	inputs: Box<[Vec<Connection>]>,
 	outputs: Box<[Vec<Connection>]>,
+	userdata: U,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -61,7 +62,7 @@ struct Connection {
 	port: usize,
 }
 
-impl<C> Graph<C>
+impl<C, U> Graph<C, U>
 where
 	C: Component,
 {
@@ -69,7 +70,7 @@ where
 		Self { nodes: Vec::new(), free: None, inputs: Vec::new(), outputs: Vec::new() }
 	}
 
-	pub fn add(&mut self, component: C) -> GraphNodeHandle {
+	pub fn add(&mut self, component: C, userdata: U) -> GraphNodeHandle {
 
 		let ic = component.input_count();
 		let oc = component.output_count();
@@ -82,6 +83,7 @@ where
 			component,
 			inputs: inputs.into(),
 			outputs: outputs.into(),
+			userdata,
 		};
 		let i = if let Some(free) = self.free {
 			if let Some(Entry::Free { next }) = self.nodes.get(free) {
@@ -105,8 +107,8 @@ where
 		GraphNodeHandle(i)
 	}
 
-	pub fn get(&self, handle: GraphNodeHandle) -> Option<&C> {
-		self.nodes.get(handle.0).and_then(|n| n.as_occupied()).map(|n| &n.component)
+	pub fn get(&self, handle: GraphNodeHandle) -> Option<(&C, &U)> {
+		self.nodes.get(handle.0).and_then(|n| n.as_occupied()).map(|n| (&n.component, &n.userdata))
 	}
 
 	pub fn remove(&mut self, component: GraphNodeHandle) -> Result<(), RemoveError> {
@@ -197,7 +199,11 @@ where
 		(ir, inputs, outputs.into(), mem_size)
 	}
 
-	fn gen(ir: &mut Vec<ir::IrOp>, nodes: &[Entry<Node<C>>], con: Connection, mem_size: &mut usize, node_io_map: &mut Box<[Option<(Box<[usize]>, Box<[usize]>)>]>) -> usize {
+	pub fn nodes(&self) -> GraphIter<C, U> {
+		GraphIter { graph: self, index: 0 }
+	}
+
+	fn gen(ir: &mut Vec<ir::IrOp>, nodes: &[Entry<Node<C, U>>], con: Connection, mem_size: &mut usize, node_io_map: &mut Box<[Option<(Box<[usize]>, Box<[usize]>)>]>) -> usize {
 		if let Some(io) = &node_io_map[con.node] {
 			return io.1[con.port];
 		}
@@ -231,6 +237,32 @@ pub enum ConnectError {
 	InvalidNode(GraphNodeHandle),
 }
 
+pub struct GraphIter<'a, C, U>
+where
+	C: Component,
+{
+	graph: &'a Graph<C, U>,
+	index: usize,
+}
+
+impl<'a, C, U> Iterator for GraphIter<'a, C, U>
+where
+	C: Component,
+{
+	type Item = (&'a C, GraphNodeHandle, &'a U);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		while let Some(node) = self.graph.nodes.get(self.index) {
+			let handle = GraphNodeHandle(self.index);
+			self.index += 1;
+			if let Some(node) = node.as_occupied() {
+				return Some((&node.component, handle, &node.userdata));
+			}
+		}
+		None
+	}
+}
+
 #[cfg(test)]
 mod test {
 	use super::*;
@@ -252,18 +284,18 @@ mod test {
 	/// ```
 	#[test]
 	fn manual_xor() {
-		let mut graph = Graph::<Box<dyn Component>>::new();
+		let mut graph = Graph::<Box<dyn Component>, ()>::new();
 
 		let bits = NonZeroU8::new(1).unwrap();
-		let i0 = graph.add(Box::new(In::new(bits)));
-		let i1 = graph.add(Box::new(In::new(bits)));
-		let l0 = graph.add(Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)));
-		let l1 = graph.add(Box::new(NotGate::new(bits)));
-		let r0 = graph.add(Box::new(OrGate::new(NonZeroOneU8::new(2).unwrap(), bits)));
-		let lr = graph.add(Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)));
-		let cp = graph.add(Box::new(XorGate::new(NonZeroOneU8::new(2).unwrap(), bits)));
-		let o0 = graph.add(Box::new(Out::new(bits)));
-		let o1 = graph.add(Box::new(Out::new(bits)));
+		let i0 = graph.add(Box::new(In::new(bits)), ());
+		let i1 = graph.add(Box::new(In::new(bits)), ());
+		let l0 = graph.add(Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
+		let l1 = graph.add(Box::new(NotGate::new(bits)), ());
+		let r0 = graph.add(Box::new(OrGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
+		let lr = graph.add(Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
+		let cp = graph.add(Box::new(XorGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
+		let o0 = graph.add(Box::new(Out::new(bits)), ());
+		let o1 = graph.add(Box::new(Out::new(bits)), ());
 
 		graph.connect((i0, 0), (l0, 0)).unwrap();
 		graph.connect((i1, 0), (l0, 1)).unwrap();
