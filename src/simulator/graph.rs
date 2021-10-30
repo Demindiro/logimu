@@ -237,6 +237,9 @@ where
 			assert_eq!(out.inputs.len(), 1);
 			for nexus in out.inputs.iter().filter_map(|n| *n) {
 				self.gen(&mut ir, nexus, &mut mem_size, &mut nexus_visited);
+				let inp  = out.inputs .iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
+				let outp = out.outputs.iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
+				out.component.generate_ir(&inp, &outp, &mut |op| ir.push(op));
 			}
 		}
 
@@ -333,15 +336,15 @@ mod test {
 		let mut graph = Graph::<Box<dyn Component>, (), ()>::new();
 
 		let bits = NonZeroU8::new(1).unwrap();
-		let i0 = graph.add(Box::new(In::new(bits)), ());
-		let i1 = graph.add(Box::new(In::new(bits)), ());
+		let i0 = graph.add(Box::new(In::new(bits, 0)), ());
+		let i1 = graph.add(Box::new(In::new(bits, 1)), ());
 		let l0 = graph.add(Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
 		let l1 = graph.add(Box::new(NotGate::new(bits)), ());
 		let r0 = graph.add(Box::new(OrGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
 		let lr = graph.add(Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
 		let cp = graph.add(Box::new(XorGate::new(NonZeroOneU8::new(2).unwrap(), bits)), ());
-		let o0 = graph.add(Box::new(Out::new(bits)), ());
-		let o1 = graph.add(Box::new(Out::new(bits)), ());
+		let o0 = graph.add(Box::new(Out::new(bits, 0)), ());
+		let o1 = graph.add(Box::new(Out::new(bits, 1)), ());
 
 		let i0n = graph.new_nexus(());
 		let i1n = graph.new_nexus(());
@@ -372,20 +375,10 @@ mod test {
 		graph.connect(Port::Output { node: cp, port: 0 }, cpn).unwrap();
 		graph.connect(Port::Input  { node: o1, port: 0 }, cpn).unwrap();
 
-		let (ir, mem_size) = graph.generate_ir();
-
+		let (ir, _) = graph.generate_ir();
 		let (a, b) = (0b1100, 0b0110);
-		let mut mem = [0; 32];
-		let mem = &mut mem[..mem_size];
-
-		mem[i0n.0] = a;
-		mem[i1n.0] = b;
-
-		interpreter::run(&ir, mem);
-
-		assert_eq!(mem[i0n.0], a);
-		assert_eq!(mem[i1n.0], b);
-		assert_eq!(mem[lrn.0], a ^ b);
-		assert_eq!(mem[cpn.0], a ^ b);
+		let mut out = [0; 2];
+		interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
+		assert_eq!(out, [a ^ b; 2]);
 	}
 }

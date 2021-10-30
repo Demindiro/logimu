@@ -136,12 +136,13 @@ impl Component for NotGate {
 }
 
 pub struct In {
-	bits: NonZeroU8,	
+	bits: NonZeroU8,
+	index: usize,
 }
 
 impl In {
-	pub fn new(bits: NonZeroU8) -> Self {
-		Self { bits }
+	pub fn new(bits: NonZeroU8, index: usize) -> Self {
+		Self { bits, index }
 	}
 }
 
@@ -162,16 +163,19 @@ impl Component for In {
 		(output == 0).then(|| OutputType { bits: self.bits })
 	}
 
-	fn generate_ir(&self, _: &[usize], _: &[usize], _: &mut dyn FnMut(IrOp)) {}
+	fn generate_ir(&self, _: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) {
+		out(IrOp::In { out: outputs[0], index: self.index })
+	}
 }
 
 pub struct Out {
 	bits: NonZeroU8,	
+	index: usize,
 }
 
 impl Out {
-	pub fn new(bits: NonZeroU8) -> Self {
-		Self { bits }
+	pub fn new(bits: NonZeroU8, index: usize) -> Self {
+		Self { bits, index }
 	}
 }
 
@@ -192,7 +196,9 @@ impl Component for Out {
 		None
 	}
 
-	fn generate_ir(&self, _: &[usize], _: &[usize], _: &mut dyn FnMut(IrOp)) {}
+	fn generate_ir(&self, inputs: &[usize], _: &[usize], out: &mut dyn FnMut(IrOp)) {
+		out(IrOp::Out { a: inputs[0], index: self.index })
+	}
 }
 
 #[cfg(test)]
@@ -240,7 +246,9 @@ mod test {
 		
 		let (a, b) = (0b1100, 0b0110);
 		let mut mem = [a, b, 0, 0, 0, 0, 0];
-		interpreter::run(&ir, &mut mem);
+
+		let mut out = [0; 2];
+		interpreter::run(&ir, &mut mem, &mut [a, b], &mut out);
 
 		assert_eq!(mem, [a, b, a & b, a | b, !(a & b), a ^ b, a ^ b])
 	}

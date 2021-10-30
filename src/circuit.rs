@@ -451,24 +451,23 @@ mod test {
 
 		let bits = NonZeroU8::new(1).unwrap();
 		let inputs = NonZeroOneU8::new(2).unwrap();
-		let i0 = In::new(bits);
-		let i1 = In::new(bits);
+		let i0 = In::new(bits, 0);
+		let i1 = In::new(bits, 1);
 		let l0 = And::new(inputs, bits);
 		let l1 = Not::new(bits);
 		let r0 = Or::new(inputs, bits);
 		let lr = And::new(inputs, bits);
-		let o0 = Out::new(bits);
+		let o0 = Out::new(bits, 0);
 		let cp = Xor::new(inputs, bits);
-		let o1 = Out::new(bits);
+		let o1 = Out::new(bits, 1);
 
 		// Inputs
-		let i0 = circuit.add_component(&i0, Point::new(0, 0), Direction::Right);
-		let i1 = circuit.add_component(&i1, Point::new(0, 4), Direction::Right);
+		circuit.add_component(&i0, Point::new(0, 0), Direction::Right);
+		circuit.add_component(&i1, Point::new(0, 4), Direction::Right);
 
 		// Connect inputs to AND
 		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 0)));
 		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 2)));
-		let (i0n, i1n) = (0, 1); // We cheat a little...
 		// Place AND and NOT
 		circuit.add_component(&l0, Point::new(4, 1), Direction::Right);
 		circuit.add_component(&l1, Point::new(8, 0), Direction::Right);
@@ -485,33 +484,22 @@ mod test {
 		circuit.add_wire(Wire::new(Point::new(9, 0), Point::new(11, 0)));
 		circuit.add_wire(Wire::new(Point::new(5, 4), Point::new(11, 2)));
 		circuit.add_wire(Wire::new(Point::new(13, 1), Point::new(16, 0)));
-		let o0n = 5;
 		// Place AND and output
 		circuit.add_component(&lr, Point::new(12, 1), Direction::Right);
-		let o0 = circuit.add_component(&o0, Point::new(16, 0), Direction::Right);
+		circuit.add_component(&o0, Point::new(16, 0), Direction::Right);
 
 		// Place XOR and output
 		circuit.add_component(&cp, Point::new(4, 8), Direction::Right);
-		let o1 = circuit.add_component(&o1, Point::new(16, 8), Direction::Right);
+		circuit.add_component(&o1, Point::new(16, 8), Direction::Right);
 		// Connect inputs to XOR and XOR to output
 		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 7)));
 		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 9)));
 		circuit.add_wire(Wire::new(Point::new(5, 8), Point::new(16, 8)));
-		let o1n = 6;
 
-		let (ir, mem_size) = circuit.generate_ir();
-
+		let (ir, _) = circuit.generate_ir();
 		let (a, b) = (0b1100, 0b0110);
-		let mut mem = [0; 32];
-		let mem = &mut mem[..mem_size];
-		mem[i0n] = a;
-		mem[i1n] = b;
-
-		simulator::ir::interpreter::run(&ir, mem);
-
-		assert_eq!(mem[i0n], a);
-		assert_eq!(mem[i1n], b);
-		assert_eq!(mem[o0n], a ^ b);
-		assert_eq!(mem[o1n], a ^ b);
+		let mut out = [0; 2];
+		simulator::ir::interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
+		assert_eq!(out, [a ^ b; 2]);
 	}
 }
