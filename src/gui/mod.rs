@@ -10,16 +10,18 @@ use component::*;
 use crate::circuit;
 use crate::simulator;
 
+use core::any::TypeId;
 use eframe::{egui, epi};
 
 const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 	fn a() -> core::num::NonZeroU8 { core::num::NonZeroU8::new(1).unwrap() }
 	fn b() -> simulator::NonZeroOneU8 { simulator::NonZeroOneU8::new(2).unwrap() }
+	use simulator::*;
 	&[
-		("and", || Box::new(simulator::AndGate::new(b(), a()))),
-		("or", || Box::new(simulator::OrGate::new(b(), a()))),
-		("not", || Box::new(simulator::NotGate::new(a()))),
-		("xor", || Box::new(simulator::XorGate::new(b(), a()))),
+		("and", || Box::new(AndGate::new(b(), a()))),
+		("or", || Box::new(OrGate::new(b(), a()))),
+		("not", || Box::new(NotGate::new(a()))),
+		("xor", || Box::new(XorGate::new(b(), a()))),
 	]
 };
 
@@ -29,6 +31,8 @@ pub struct App {
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
+	input_counter: usize,
+	output_counter: usize,
 }
 
 impl App {
@@ -40,6 +44,8 @@ impl App {
 			component_direction: circuit::Direction::Up,
 			wire_start: None,
 			circuit: Default::default(),
+			input_counter: 0,
+			output_counter: 0,
 		}
 	}
 }
@@ -88,10 +94,18 @@ impl epi::App for App {
 		egui::SidePanel::left("side_panel").show(ctx, |ui| {
 			ui.heading("Components");
 
+			ui.label(format!("Inputs: {}", self.input_counter));
+			ui.label(format!("Outputs: {}", self.output_counter));
+
+			let bits = core::num::NonZeroU8::new(1).unwrap();
 			if ui.button("wire").clicked() {
 				self.component = None;
+			} else if ui.button("in").clicked() {
+				self.component = Some(Box::new(simulator::In::new(bits, self.input_counter)));
+			} else if ui.button("out").clicked() {
+				self.component = Some(Box::new(simulator::Out::new(bits, self.output_counter)));
 			} else {
-				for (i, c) in COMPONENTS.iter().enumerate() {
+				for c in COMPONENTS.iter() {
 					if ui.button(c.0).clicked() {
 						self.component = Some(c.1());
 						break;
@@ -153,6 +167,8 @@ impl epi::App for App {
 					c.draw(&paint, pos, self.component_direction);
 
 					if e.clicked() {
+						(c.type_id() == TypeId::of::<simulator::In>()).then(|| self.input_counter += 1);
+						(c.type_id() == TypeId::of::<simulator::Out>()).then(|| self.output_counter += 1);
 						self.circuit.add_component(c, point, self.component_direction);
 					} else {
 						self.component = Some(c);

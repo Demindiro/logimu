@@ -1,6 +1,7 @@
 use crate::impl_dyn;
 use crate::simulator::{Component, InputType, OutputType, ir::IrOp};
 use crate::circuit::{CircuitComponent, Direction, PointOffset};
+use core::any::Any;
 use eframe::egui::{Painter, Vec2, Pos2};
 
 impl Direction {
@@ -16,7 +17,7 @@ impl Direction {
 
 pub trait ComponentPlacer
 where
-	Self: CircuitComponent,
+	Self: CircuitComponent + Any,
 {
 	fn name(&self) -> &str;
 

@@ -4,7 +4,7 @@ use crate::simulator::{AndGate, OrGate, XorGate, NotGate, In, Out};
 use crate::circuit::{Direction, CircuitComponent, PointOffset};
 use core::num::NonZeroU8;
 use eframe::egui::{Painter, Pos2, Stroke, Color32, Rect, Vec2, Shape};
-use eframe::egui::paint::{CircleShape, Mesh, Vertex};
+use eframe::egui::paint::{CircleShape, RectShape, Mesh, Vertex};
 
 const IN: &[PointOffset] = &[PointOffset::new(-1, -1), PointOffset::new(-1, 1)];
 const IN_NOT: &[PointOffset] = &[PointOffset::new(-1, 0)];
@@ -192,4 +192,29 @@ impl ComponentPlacer for NotGate {
 }
 
 impl_cc!(In, &[], CENTER);
+
+impl ComponentPlacer for In {
+	fn name(&self) -> &str {
+		"in"
+	}
+
+	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction) {
+		let stroke = Stroke::new(3.0, Color32::BLACK);
+		let rect = Rect::from_center_size(pos, Vec2::new(16.0, 16.0))
+			.translate(dir.rotate_vec2(Vec2::new(8.0, 0.0)));
+		painter.add(Shape::Rect(RectShape { corner_radius: 0.0, fill: Color32::WHITE, rect, stroke }));
+	}
+}
+
 impl_cc!(Out, CENTER, &[]);
+
+impl ComponentPlacer for Out {
+	fn name(&self) -> &str {
+		"out"
+	}
+
+	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction) {
+		let stroke = Stroke::new(3.0, Color32::BLACK);
+		painter.add(Shape::Circle(CircleShape { center: pos + dir.rotate_vec2(Vec2::new(8.0, 0.0)), radius: 8.0, fill: Color32::WHITE, stroke }));
+	}
+}
