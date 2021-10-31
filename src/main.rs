@@ -1,3 +1,5 @@
+#![feature(new_uninit)]
+
 mod circuit;
 mod gui;
 mod simulator;

@@ -13,7 +13,6 @@ const CENTER: &[PointOffset] = &[PointOffset::new(0, 0)];
 
 macro_rules! impl_cc {
 	($name:ident, $in:expr, $out:expr) => {
-		#[typetag::serde]
 		impl CircuitComponent for $name {
 			fn inputs(&self) -> &[PointOffset] {
 				$in
@@ -28,6 +27,7 @@ macro_rules! impl_cc {
 
 impl_cc!(AndGate, IN, OUT);
 
+#[typetag::serde]
 impl ComponentPlacer for AndGate {
 	fn name(&self) -> &str {
 		"and"
@@ -60,6 +60,7 @@ impl ComponentPlacer for AndGate {
 
 impl_cc!(OrGate, IN, OUT);
 
+#[typetag::serde]
 impl ComponentPlacer for OrGate {
 	fn name(&self) -> &str {
 		"or"
@@ -111,6 +112,7 @@ impl ComponentPlacer for OrGate {
 
 impl_cc!(XorGate, IN, OUT);
 
+#[typetag::serde]
 impl ComponentPlacer for XorGate {
 	fn name(&self) -> &str {
 		"xor"
@@ -169,6 +171,7 @@ impl ComponentPlacer for XorGate {
 
 impl_cc!(NotGate, IN_NOT, OUT);
 
+#[typetag::serde]
 impl ComponentPlacer for NotGate {
 	fn name(&self) -> &str {
 		"not"
@@ -194,6 +197,7 @@ impl ComponentPlacer for NotGate {
 
 impl_cc!(In, &[], CENTER);
 
+#[typetag::serde]
 impl ComponentPlacer for In {
 	fn name(&self) -> &str {
 		"in"
@@ -215,6 +219,7 @@ impl ComponentPlacer for In {
 
 impl_cc!(Out, CENTER, &[]);
 
+#[typetag::serde]
 impl ComponentPlacer for Out {
 	fn name(&self) -> &str {
 		"out"

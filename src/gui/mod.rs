@@ -12,6 +12,8 @@ use crate::simulator;
 use crate::simulator::ir::IrOp;
 
 use core::any::TypeId;
+use std::fs;
+use std::io;
 use eframe::{egui, epi};
 
 const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
@@ -26,6 +28,18 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 	]
 };
 
+#[derive(Debug)]
+pub enum LoadCircuitError {
+	Io(io::Error),
+	Serde(ron::Error),
+}
+
+#[derive(Debug)]
+pub enum SaveCircuitError {
+	Io(io::Error),
+	Serde(ron::Error),
+}
+
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
 	component: Option<Box<dyn ComponentPlacer>>,
@@ -38,12 +52,14 @@ pub struct App {
 	memory: Box<[usize]>,
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
+
+	file_path: String,
 }
 
 impl App {
 	pub fn new() -> Self {
 		use crate::simulator::*;
-		Self {
+		let mut s = Self {
 			dialog: None,
 			component: None,
 			component_direction: circuit::Direction::Up,
@@ -54,7 +70,36 @@ impl App {
 			outputs: Vec::new(),
 			memory: Box::default(),
 			needs_update: false,
+
+			file_path: String::new(),
+		};
+		let _ = dbg!(s.load_from_file("/tmp/ok.logimu"));
+		s.file_path = "/tmp/ok.logimu".into();
+		s
+	}
+
+	pub fn load_from_file(&mut self, path: impl Into<String>) -> Result<(), LoadCircuitError> {
+		let path = path.into();
+		let f = fs::File::open(&path).map_err(LoadCircuitError::Io)?;
+		self.circuit = ron::de::from_reader(f).map_err(LoadCircuitError::Serde)?;
+		self.inputs.clear();
+		self.outputs.clear();
+
+		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
+			c.external_input().map(|i| self.inputs.resize((i + 1).max(self.inputs.len()), 0));
+			c.external_output().map(|i| self.outputs.resize((i + 1).max(self.outputs.len()), 0));
 		}
+
+		self.file_path = path;
+		Ok(())
+	}
+
+	pub fn save_to_file(&mut self, path: Option<&str>) -> Result<(), SaveCircuitError> {
+		let path = path.unwrap_or(&self.file_path);
+		dbg!(path);
+		let f = fs::File::create(&path).map_err(SaveCircuitError::Io)?;
+		ron::ser::to_writer(f, &self.circuit).map_err(SaveCircuitError::Serde)?;
+		Ok(())
 	}
 }
 
@@ -91,6 +136,8 @@ impl epi::App for App {
 			self.component_direction = self.component_direction.rotate_clockwise();
 		}
 
+		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
+
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
 			menu::bar(ui, |ui| {
 				menu::menu(ui, "File", |ui| {
@@ -102,13 +149,17 @@ impl epi::App for App {
 					if ui.button("Close").clicked() {
 						frame.quit()
 					}
-					if ui.button("Save").clicked() {
-					}
+					save |= ui.button("Save").clicked();
 					if ui.button("Save as").clicked() {
 					}
 				});
 			});
 		});
+
+		if save {
+			let e = self.save_to_file(None);
+			dbg!(e);
+		}
 
 		if let Some(dialog) = self.dialog.as_mut() {
 			let r = Window::new(dialog.name())

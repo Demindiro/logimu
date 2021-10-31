@@ -2,10 +2,12 @@ use crate::impl_dyn;
 use super::simulator;
 use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle, GraphIter, NexusHandle, Port};
 
+use core::fmt;
 use core::mem;
 use core::ops::{Add, Mul};
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use serde::ser::{SerializeSeq, SerializeTuple, SerializeStruct};
+use serde::de;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Point {
@@ -14,6 +16,9 @@ pub struct Point {
 }
 
 impl Point {
+	pub const MIN: Self = Self { x: u16::MIN, y: u16::MIN };
+	pub const MAX: Self = Self { x: u16::MAX, y: u16::MAX };
+
 	pub const fn new(x: u16, y: u16) -> Self {
 		Self { x, y }
 	}
@@ -81,6 +86,8 @@ pub struct Aabb {
 }
 
 impl Aabb {
+	pub const ALL: Self = Self { min: Point::MIN, max: Point::MAX };
+
 	/// Create a new AABB containing two points as tightly as possible.
 	pub fn new(p1: Point, p2: Point) -> Self {
 		Self {
@@ -139,7 +146,6 @@ impl Wire {
 }
 
 /// A component with fixed input & output locations
-#[typetag::serde(tag = "type")]
 pub trait CircuitComponent
 where
 	Self: simulator::Component,
@@ -165,13 +171,8 @@ impl_dyn! {
 	CircuitComponent for &dyn CircuitComponent {
 		inputs() -> &[PointOffset];
 		outputs() -> &[PointOffset];
-		typetag_name() -> &'static str;
-		typetag_deserialize() -> ();
 	}
 }
-
-// Necessary so we can actually use Serde with trait objects.
-//erased_serde::serialize_trait_object!(CircuitComponent);
 
 /// A collection of interconnected wires and components.
 pub struct Circuit<C>
@@ -184,7 +185,7 @@ where
 	///
 	/// - Root zone: 1024x1024 subzones -> 24 MiB memory on 64-bit.
 	/// - Subzone: 64x64 points. Memory usage depends on amount of nodes (components & wires) in zone.
-	zones: [[Zone; 1024]; 1024],
+	zones: Box<[[Zone; 1024]; 1024]>,
 	/// All wires in this circuit.
 	wires: Vec<(Wire, NexusHandle)>,
 	/// A graph connecting all nodes. Used for IR generation.
@@ -326,11 +327,20 @@ where
 	C: CircuitComponent,
 {
 	fn default() -> Self {
-		const ZONE: Zone = Zone { nodes: Vec::new() };
-		const ARRAY: [Zone; 1024] = [ZONE; 1024];
-		const MATRIX: [[Zone; 1024]; 1024] = [ARRAY; 1024];
+		use core::mem::MaybeUninit;
+		let zones = unsafe {
+			// SAFETY: nested MaybeUninits to single MaybeUninit still indicates the underlying
+			// memory is unitialized.
+			let mut b: Box<[[MaybeUninit<Zone>; 1024]; 1024]> = Box::new_uninit().assume_init();
+			b
+				.iter_mut()
+				.for_each(|r| r.iter_mut().for_each(|e| { e.write(Zone { nodes: Vec::new() }); }));
+			// SAFETY: All elements have been initialized and we're simply casting each element
+			// from MaybeUninit<Zone> to Zone.
+			core::mem::transmute(b)
+		};
 		Self {
-			zones: MATRIX,
+			zones,
 			wires: Vec::new(),
 			graph: Graph::new(),
 		}
@@ -364,7 +374,60 @@ where
 	where
 		D: Deserializer<'a>,
 	{
-		todo!()
+		#[derive(Deserialize)]
+		#[serde(field_identifier, rename_all = "lowercase")]
+		enum Field { Wires, Components }
+
+		struct CircuitVisitor<C>(core::marker::PhantomData<C>);
+
+		impl<'a, C> de::Visitor<'a> for CircuitVisitor<C>
+		where
+			C: CircuitComponent + Deserialize<'a>,
+		{
+			type Value = Circuit<C>;
+			
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct Circuit")
+            }
+
+
+            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+            where
+                V: de::MapAccess<'a>,
+            {
+				let mut s = Circuit::default();
+				let (mut handled_wires, mut handled_components) = (false, false);
+
+				while let Some(key) = map.next_key()? {
+					match key {
+						Field::Wires => {
+							if handled_wires {
+								return Err(de::Error::duplicate_field("wires"));
+							}
+							handled_wires = true;
+							map.next_value::<Vec<Wire>>()?.into_iter().for_each(|w| s.add_wire(w));
+						},
+						Field::Components => {
+							if handled_components {
+								return Err(de::Error::duplicate_field("wires"));
+							}
+							handled_components = true;
+							for (c, p, d) in map.next_value::<Vec<(C, Point, Direction)>>()? {
+								s.add_component(c, p, d);
+							}
+						},
+					}
+				}
+
+                Ok(s)
+            }
+		}
+
+		deserializer.deserialize_struct(
+			stringify!(Circuit),
+			&["wires", "components"],
+			CircuitVisitor(core::marker::PhantomData)
+		)
 	}
 }
 
@@ -556,9 +619,34 @@ mod test {
 	fn serde() {
 		use serde_test::*;
 
-		let mut c = Box::<Circuit<&dyn CircuitComponent>>::default();
+		#[typetag::serde]
+		trait T: CircuitComponent {}
+
+		impl_dyn! {
+			Component for &dyn T {
+				input_count() -> usize;
+				input_type(input: usize) -> Option<InputType>;
+				output_count() -> usize;
+				output_type(output: usize) -> Option<OutputType>;
+				generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
+			}
+		}
+
+		impl_dyn! {
+			CircuitComponent for &dyn T {
+				inputs() -> &[PointOffset];
+				outputs() -> &[PointOffset];
+			}
+		}
+
+		#[typetag::serde]
+		impl T for In {}
+
+		let mut c = Box::<Circuit<&dyn T>>::default();
 
 		c.add_wire(Wire::new(Point::new(1, 1), Point::new(4, 4)));
+		let n = In::new(NonZeroU8::new(3).unwrap(), 6);
+		c.add_component(&n, Point::new(1, 1), Direction::Up);
 
 		assert_ser_tokens(&c, &[
 			Token::Struct { len: 2, name: stringify!(Circuit) },
@@ -582,7 +670,25 @@ mod test {
 			Token::StructEnd,
 			Token::SeqEnd,
 			Token::Str("components"),
-			Token::Seq { len: Some(0) },
+			Token::Seq { len: Some(1) },
+			Token::Tuple { len: 3 },
+			Token::Map { len: Some(1) },
+			Token::Str("In"),
+			Token::Struct { name: "In", len: 2 },
+			Token::Str("bits"),
+			Token::U8(3),
+			Token::Str("index"),
+			Token::U64(6),
+			Token::StructEnd,
+			Token::MapEnd,
+			Token::Struct { name: "Point", len: 2 },
+			Token::Str("x"),
+			Token::U16(1),
+			Token::Str("y"),
+			Token::U16(1),
+			Token::StructEnd,
+			Token::UnitVariant { name: "Direction", variant: "Up" },
+			Token::TupleEnd,
 			Token::SeqEnd,
 			Token::StructEnd,
 		]);
