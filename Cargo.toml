@@ -7,3 +7,9 @@ edition = "2021"
 
 [dependencies]
 eframe = "*"
+serde = { version = "*", features = ["derive"] }
+erased-serde = "*"
+typetag = "*"
+
+[dev-dependencies]
+serde_test = "*"

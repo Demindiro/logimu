@@ -1,6 +1,10 @@
 use crate::impl_dyn;
 use super::ir::IrOp;
+use core::fmt;
 use core::num::NonZeroU8;
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::ser::SerializeStruct;
+use serde::de;
 
 /// A single component with one or more inputs and outputs.
 pub trait Component {
@@ -57,8 +61,45 @@ impl NonZeroOneU8 {
 	}
 }
 
+impl Serialize for NonZeroOneU8 {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer
+	{
+		serializer.serialize_u8(self.get())
+	}
+}
+
+impl<'a> Deserialize<'a> for NonZeroOneU8 {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'a>
+	{
+		struct V;
+
+		impl<'b> de::Visitor<'b> for V {
+			type Value = NonZeroOneU8;
+
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("out of range")
+			}
+
+			fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
+			where
+				E: de::Error,
+			{
+				NonZeroOneU8::new(value)
+					.ok_or(E::invalid_value(de::Unexpected::Unsigned(value.into()), &self))
+			}
+		}
+
+		deserializer.deserialize_u8(V)
+	}
+}
+
 macro_rules! gate {
 	($name:ident, $op:ident) => {
+		#[derive(Serialize, Deserialize)]
 		pub struct $name {
 			/// The amount of inputs this gate has. Must be at least 2.
 			inputs: NonZeroOneU8,
@@ -102,6 +143,7 @@ gate!(AndGate, And);
 gate!(OrGate, Or);
 gate!(XorGate, Xor);
 
+#[derive(Serialize, Deserialize)]
 pub struct NotGate {
 	/// The size of each input and the output.
 	bits: NonZeroU8,
@@ -135,6 +177,7 @@ impl Component for NotGate {
 	}
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct In {
 	bits: NonZeroU8,
 	pub index: usize,
@@ -168,6 +211,7 @@ impl Component for In {
 	}
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Out {
 	bits: NonZeroU8,	
 	pub index: usize,

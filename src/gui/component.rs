@@ -15,6 +15,7 @@ impl Direction {
 	}
 }
 
+//#[typetag::serde(tag = "type")]
 pub trait ComponentPlacer
 where
 	Self: CircuitComponent + Any,
@@ -46,5 +47,9 @@ impl_dyn! {
 	CircuitComponent for Box<dyn ComponentPlacer> {
 		inputs() -> &[PointOffset];
 		outputs() -> &[PointOffset];
+		typetag_name() -> &'static str;
+		typetag_deserialize() -> ();
 	}
 }
+
+erased_serde::serialize_trait_object!(ComponentPlacer);

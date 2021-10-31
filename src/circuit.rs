@@ -4,8 +4,10 @@ use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphN
 
 use core::mem;
 use core::ops::{Add, Mul};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::ser::{SerializeSeq, SerializeTuple, SerializeStruct};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Point {
 	pub x: u16,
 	pub y: u16,
@@ -39,7 +41,7 @@ impl Add<PointOffset> for Point {
 	}
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Direction {
 	Right,
 	Down,
@@ -93,7 +95,7 @@ impl Aabb {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Wire {
 	pub from: Point,
 	pub to: Point,
@@ -137,6 +139,7 @@ impl Wire {
 }
 
 /// A component with fixed input & output locations
+#[typetag::serde(tag = "type")]
 pub trait CircuitComponent
 where
 	Self: simulator::Component,
@@ -162,8 +165,13 @@ impl_dyn! {
 	CircuitComponent for &dyn CircuitComponent {
 		inputs() -> &[PointOffset];
 		outputs() -> &[PointOffset];
+		typetag_name() -> &'static str;
+		typetag_deserialize() -> ();
 	}
 }
+
+// Necessary so we can actually use Serde with trait objects.
+//erased_serde::serialize_trait_object!(CircuitComponent);
 
 /// A collection of interconnected wires and components.
 pub struct Circuit<C>
@@ -329,6 +337,37 @@ where
 	}
 }
 
+impl<C> Serialize for Circuit<C>
+where
+	C: CircuitComponent + Serialize,
+{
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		let mut circuit = serializer.serialize_struct(stringify!(Circuit), 2)?;
+		// TODO avoid redundant box
+		circuit.serialize_field("wires", &self.wires.iter().map(|(w, _)| w).collect::<Box<_>>())?;
+		circuit.serialize_field(
+			"components",
+			&self.graph.nodes().map(|(c, _, (p, d))| (c, p, d)).collect::<Box<_>>(),
+		)?;
+		circuit.end()
+	}
+}
+
+impl<'a, C> Deserialize<'a> for Circuit<C>
+where
+	C: CircuitComponent + Deserialize<'a>,
+{
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'a>,
+	{
+		todo!()
+	}
+}
+
 impl Zone {
 	const COMPONENT_FLAG: usize = 1 << (mem::size_of::<usize>() - 1);
 
@@ -428,6 +467,7 @@ mod test {
 	use core::num::NonZeroU8;
 	use simulator::{In, Out, AndGate as And, OrGate as Or, NotGate as Not, XorGate as Xor, NonZeroOneU8};
 
+
 	/// ```
 	/// i0 --+-------v
 	///      |      AND --> NOT
@@ -510,5 +550,41 @@ mod test {
 		let mut out = [0; 2];
 		simulator::ir::interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
 		assert_eq!(out, [a ^ b; 2]);
+	}
+
+	#[test]
+	fn serde() {
+		use serde_test::*;
+
+		let mut c = Box::<Circuit<&dyn CircuitComponent>>::default();
+
+		c.add_wire(Wire::new(Point::new(1, 1), Point::new(4, 4)));
+
+		assert_ser_tokens(&c, &[
+			Token::Struct { len: 2, name: stringify!(Circuit) },
+			Token::Str("wires"),
+			Token::Seq { len: Some(1) },
+			Token::Struct { len: 2, name: stringify!(Wire) },
+			Token::Str("from"),
+			Token::Struct { len: 2, name: stringify!(Point) },
+			Token::Str("x"),
+			Token::U16(1),
+			Token::Str("y"),
+			Token::U16(1),
+			Token::StructEnd,
+			Token::Str("to"),
+			Token::Struct { len: 2, name: stringify!(Point) },
+			Token::Str("x"),
+			Token::U16(4),
+			Token::Str("y"),
+			Token::U16(4),
+			Token::StructEnd,
+			Token::StructEnd,
+			Token::SeqEnd,
+			Token::Str("components"),
+			Token::Seq { len: Some(0) },
+			Token::SeqEnd,
+			Token::StructEnd,
+		]);
 	}
 }

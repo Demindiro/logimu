@@ -13,6 +13,7 @@ const CENTER: &[PointOffset] = &[PointOffset::new(0, 0)];
 
 macro_rules! impl_cc {
 	($name:ident, $in:expr, $out:expr) => {
+		#[typetag::serde]
 		impl CircuitComponent for $name {
 			fn inputs(&self) -> &[PointOffset] {
 				$in
