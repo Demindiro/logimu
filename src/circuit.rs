@@ -120,23 +120,14 @@ impl Wire {
 			return false;
 		}
 
-		// y = ax + b
-		// a = dy / dx = (y2 - y1) / (x2 - x1)
-		// b = y1 - ax1
 		let (x1, y1) = (i32::from(self.from.x), i32::from(self.from.y));
 		let (x2, y2) = (i32::from(self.to.x), i32::from(self.to.y));
 		let (xp, yp) = (i32::from(point.x), i32::from(point.y));
+		// Make start of line (x1, y1) the origin so b = 0
 		let (dx, dy) = (x2 - x1, y2 - y1);
-		// Ensure we can divide by dx
-		if dx != 0 {
-			let a = dy / dx;
-			let b = y1 - a * x1;
-			// p in wire iff yp = a*xp + b
-			yp == a * xp + b
-		} else {
-			// wire is straight along y axis (=> x1 == x2), so just check if xp == x1
-			xp == x1
-		}
+		let (dxp, dyp) = (xp - x1, yp - y1);
+		// y = ax <=> y = dy / dx * x <=> y * dx = x * dx
+		dx * dyp == dy * dxp
 	}
 
 	/// Return the AABB enclosing this wire.
