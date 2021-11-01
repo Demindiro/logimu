@@ -475,13 +475,13 @@ impl<'a, C> Iterator for WireIter<'a, C>
 where
 	C: CircuitComponent,
 {
-	type Item = &'a Wire;
+	type Item = (&'a Wire, NexusHandle);
 
 	fn next(&mut self) -> Option<Self::Item> {
-		while let Some((w, _)) = self.circuit.wires.get(self.index) {
+		while let Some((w, h)) = self.circuit.wires.get(self.index) {
 			self.index += 1;
 			if self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to) {
-				return Some(w);
+				return Some((w, *h));
 			}
 		}
 		None

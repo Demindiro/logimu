@@ -40,6 +40,12 @@ impl GraphNodeHandle {
 #[repr(transparent)]
 pub struct NexusHandle(usize);
 
+impl NexusHandle {
+	pub fn into_raw(self) -> usize {
+		self.0
+	}
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Port {
 	Input  { node: GraphNodeHandle, port: usize },
