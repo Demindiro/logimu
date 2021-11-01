@@ -1,5 +1,10 @@
+use crate::impl_dyn;
 use super::ir::IrOp;
+use core::fmt;
 use core::num::NonZeroU8;
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::ser::SerializeStruct;
+use serde::de;
 
 /// A single component with one or more inputs and outputs.
 pub trait Component {
@@ -19,6 +24,16 @@ pub trait Component {
 	fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp));
 }
 
+impl_dyn! {
+	Component for Box<dyn Component> {
+		input_count() -> usize;
+		input_type(input: usize) -> Option<InputType>;
+		output_count() -> usize;
+		output_type(output: usize) -> Option<OutputType>;
+		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
+	}
+}
+
 /// The type of an input.
 pub struct InputType {
 	/// How many bits this input has.
@@ -32,6 +47,7 @@ pub struct OutputType {
 }
 
 /// A u8 that is larger than 2.
+#[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 pub struct NonZeroOneU8(NonZeroU8);
 
@@ -45,8 +61,45 @@ impl NonZeroOneU8 {
 	}
 }
 
+impl Serialize for NonZeroOneU8 {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer
+	{
+		serializer.serialize_u8(self.get())
+	}
+}
+
+impl<'a> Deserialize<'a> for NonZeroOneU8 {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'a>
+	{
+		struct V;
+
+		impl<'b> de::Visitor<'b> for V {
+			type Value = NonZeroOneU8;
+
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("out of range")
+			}
+
+			fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
+			where
+				E: de::Error,
+			{
+				NonZeroOneU8::new(value)
+					.ok_or(E::invalid_value(de::Unexpected::Unsigned(value.into()), &self))
+			}
+		}
+
+		deserializer.deserialize_u8(V)
+	}
+}
+
 macro_rules! gate {
 	($name:ident, $op:ident) => {
+		#[derive(Serialize, Deserialize)]
 		pub struct $name {
 			/// The amount of inputs this gate has. Must be at least 2.
 			inputs: NonZeroOneU8,
@@ -90,6 +143,7 @@ gate!(AndGate, And);
 gate!(OrGate, Or);
 gate!(XorGate, Xor);
 
+#[derive(Serialize, Deserialize)]
 pub struct NotGate {
 	/// The size of each input and the output.
 	bits: NonZeroU8,
@@ -123,13 +177,15 @@ impl Component for NotGate {
 	}
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct In {
-	bits: NonZeroU8,	
+	bits: NonZeroU8,
+	pub index: usize,
 }
 
 impl In {
-	pub fn new(bits: NonZeroU8) -> Self {
-		Self { bits }
+	pub fn new(bits: NonZeroU8, index: usize) -> Self {
+		Self { bits, index }
 	}
 }
 
@@ -150,16 +206,20 @@ impl Component for In {
 		(output == 0).then(|| OutputType { bits: self.bits })
 	}
 
-	fn generate_ir(&self, _: &[usize], _: &[usize], _: &mut dyn FnMut(IrOp)) {}
+	fn generate_ir(&self, _: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) {
+		out(IrOp::In { out: outputs[0], index: self.index })
+	}
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Out {
 	bits: NonZeroU8,	
+	pub index: usize,
 }
 
 impl Out {
-	pub fn new(bits: NonZeroU8) -> Self {
-		Self { bits }
+	pub fn new(bits: NonZeroU8, index: usize) -> Self {
+		Self { bits, index }
 	}
 }
 
@@ -180,7 +240,9 @@ impl Component for Out {
 		None
 	}
 
-	fn generate_ir(&self, _: &[usize], _: &[usize], _: &mut dyn FnMut(IrOp)) {}
+	fn generate_ir(&self, inputs: &[usize], _: &[usize], out: &mut dyn FnMut(IrOp)) {
+		out(IrOp::Out { a: inputs[0], index: self.index })
+	}
 }
 
 #[cfg(test)]
@@ -228,7 +290,9 @@ mod test {
 		
 		let (a, b) = (0b1100, 0b0110);
 		let mut mem = [a, b, 0, 0, 0, 0, 0];
-		interpreter::run(&ir, &mut mem);
+
+		let mut out = [0; 2];
+		interpreter::run(&ir, &mut mem, &mut [a, b], &mut out);
 
 		assert_eq!(mem, [a, b, a & b, a | b, !(a & b), a ^ b, a ^ b])
 	}

@@ -7,3 +7,13 @@ edition = "2021"
 
 [dependencies]
 eframe = "*"
+serde = { version = "*", features = ["derive"] }
+erased-serde = "*"
+typetag = "*"
+ron = "*"
+
+[dev-dependencies]
+serde_test = "*"
+
+[profile.release]
+lto = "fat"

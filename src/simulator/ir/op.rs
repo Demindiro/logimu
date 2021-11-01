@@ -2,6 +2,8 @@ use core::fmt;
 
 #[derive(Copy, Clone)]
 pub enum IrOp {
+	In { index: usize, out: usize },
+	Out { a: usize, index: usize },
 	And { a: usize, b: usize, out: usize },
 	Or { a: usize, b: usize, out: usize },
 	Xor { a: usize, b: usize, out: usize },
@@ -17,6 +19,8 @@ impl fmt::Debug for IrOp {
 			write!(f, "{:>3} = ({:<4} {:>3} {:>3})", c, op, a, b)
 		};
 		match self {
+			IrOp::In  { index, out } => write!(f, "{:>3} < (in   {:>3})", out, index),
+			IrOp::Out { a, index   } => write!(f, "{:>3} > (out  {:>3})", a  , index),
 			IrOp::And { a, b, out } => fmt2(f, "and", a, b, out),
 			IrOp::Or { a, b, out } => fmt2(f, "or", a, b, out),
 			IrOp::Xor { a, b, out } => fmt2(f, "xor", a, b, out),

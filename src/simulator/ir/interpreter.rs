@@ -3,11 +3,13 @@
 use super::*;
 
 /// Run a sequence of instructions until the end.
-pub fn run(ops: &[IrOp], memory: &mut [usize]) {
+pub fn run(ops: &[IrOp], memory: &mut [usize], input: &[usize], output: &mut [usize]) {
 	let mut pc = 0;
 	while let Some(op) = ops.get(pc) {
 		pc += 1;
 		match *op {
+			IrOp::In { index, out } => memory[out] = input[index],
+			IrOp::Out { a, index } => output[index] = memory[a],
 			IrOp::And { a, b, out } => memory[out] = memory[a] & memory[b],
 			IrOp::Or { a, b, out } => memory[out] = memory[a] | memory[b],
 			IrOp::Xor { a, b, out } => memory[out] = memory[a] ^ memory[b],
