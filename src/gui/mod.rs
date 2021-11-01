@@ -230,7 +230,7 @@ impl epi::App for App {
 			for (w, h) in self.circuit.wires(aabb) {
 				let stroke = match e.hover_pos().map(|p| w.intersect_point(pos2point(p))) {
 					Some(true) => Stroke::new(3.0, Color32::YELLOW),
-					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][self.memory[h.into_raw()] & 1]),
+					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][*self.memory.get(h.into_raw()).unwrap_or(&0) & 1]),
 				};
 				paint.line_segment([point2pos(w.from), point2pos(w.to)], stroke);
 			}
