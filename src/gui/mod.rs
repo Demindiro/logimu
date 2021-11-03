@@ -79,9 +79,21 @@ impl App {
 
 			file_path: String::new(),
 		};
-		let _ = dbg!(s.load_from_file("/tmp/ok.logimu"));
-		s.file_path = "/tmp/ok.logimu".into();
-		let _ = dbg!(s.load_ic("/tmp/flipflop.logimu"));
+		let f = std::env::args().skip(1).next();
+		let f = f.as_deref().unwrap_or("/tmp/ok.logimu");
+		let _ = dbg!(s.load_from_file(f));
+		s.file_path = f.into();
+
+		for f in std::fs::read_dir("/tmp").unwrap() {
+			let f = f.unwrap();
+			let f = f.file_name();
+			let f = f.to_str().unwrap();
+			if f.ends_with(".logimu") {
+				dbg!(f);
+				let _ = dbg!(s.load_ic(&("/tmp/".to_owned() + f)));
+			}
+		}
+
 		s
 	}
 
@@ -130,7 +142,7 @@ impl epi::App for App {
 		// TODO make components clickable instead of using numpads
 		{
 			use egui::Key::*;
-			for (i, b) in [Num0, Num1, Num2, Num3, Num4].iter().enumerate() {
+			for (i, b) in [Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9].iter().enumerate() {
 				if ctx.input().key_pressed(*b) {
 					self.inputs.get_mut(i).map(|e| *e = !*e);
 				}
