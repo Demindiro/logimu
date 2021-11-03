@@ -17,6 +17,7 @@ use core::any::TypeId;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::path::Path;
 use std::rc::Rc;
 use eframe::{egui, epi};
 
@@ -84,7 +85,7 @@ impl App {
 		let _ = dbg!(s.load_from_file(f));
 		s.file_path = f.into();
 
-		for f in std::fs::read_dir("/tmp").unwrap() {
+		for f in std::fs::read_dir(Path::new(f).parent().unwrap()).unwrap() {
 			let f = f.unwrap();
 			let f = f.file_name();
 			let f = f.to_str().unwrap();
