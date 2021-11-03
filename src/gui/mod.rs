@@ -1,6 +1,7 @@
 mod component;
 mod dialog;
 mod file;
+mod ic;
 mod gates;
 
 use dialog::Dialog;
@@ -10,10 +11,13 @@ use component::*;
 use crate::circuit;
 use crate::simulator;
 use crate::simulator::ir::IrOp;
+use crate::circuit::{Circuit, CircuitComponent, Ic};
 
 use core::any::TypeId;
+use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::rc::Rc;
 use eframe::{egui, epi};
 
 const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
@@ -46,6 +50,7 @@ pub struct App {
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
+	ic_components: HashMap<Box<str>, Ic>,
 	
 	inputs: Vec<usize>,
 	outputs: Vec<usize>,
@@ -65,6 +70,7 @@ impl App {
 			component_direction: circuit::Direction::Up,
 			wire_start: None,
 			circuit: Default::default(),
+			ic_components: Default::default(),
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
@@ -75,6 +81,7 @@ impl App {
 		};
 		let _ = dbg!(s.load_from_file("/tmp/ok.logimu"));
 		s.file_path = "/tmp/ok.logimu".into();
+		let _ = dbg!(s.load_ic("/tmp/flipflop.logimu"));
 		s
 	}
 
@@ -99,6 +106,14 @@ impl App {
 		dbg!(path);
 		let f = fs::File::create(&path).map_err(SaveCircuitError::Io)?;
 		ron::ser::to_writer(f, &self.circuit).map_err(SaveCircuitError::Serde)?;
+		Ok(())
+	}
+
+	pub fn load_ic(&mut self, path: &str) -> Result<(), LoadCircuitError> {
+		let f = fs::File::open(path).map_err(LoadCircuitError::Io)?;
+		let c: Circuit<Box<dyn ComponentPlacer>> = ron::de::from_reader(f)
+			.map_err(LoadCircuitError::Serde)?;
+		self.ic_components.insert(path.to_string().into(), Ic::from_circuit(c, path));
 		Ok(())
 	}
 }
@@ -174,19 +189,29 @@ impl epi::App for App {
 			ui.label(format!("Inputs: {}", self.inputs.len()));
 			ui.label(format!("Outputs: {}", self.outputs.len()));
 
+			// Built in components
 			let bits = core::num::NonZeroU8::new(1).unwrap();
 			if ui.button("wire").clicked() {
 				self.component = None;
-			} else if ui.button("in").clicked() {
+			}
+			if ui.button("in").clicked() {
 				self.component = Some(Box::new(simulator::In::new(bits, self.inputs.len())));
-			} else if ui.button("out").clicked() {
+			}
+			if ui.button("out").clicked() {
 				self.component = Some(Box::new(simulator::Out::new(bits, self.outputs.len())));
-			} else {
-				for c in COMPONENTS.iter() {
-					if ui.button(c.0).clicked() {
-						self.component = Some(c.1());
-						break;
-					}
+			}
+			for c in COMPONENTS.iter() {
+				if ui.button(c.0).clicked() {
+					self.component = Some(c.1());
+				}
+			}
+
+			ui.separator();
+
+			// Custom components (ICs)
+			for (name, ic) in self.ic_components.iter() {
+				if ui.button(name).clicked() {
+					self.component = Some(Box::new(ic.clone()));
 				}
 			}
 		});

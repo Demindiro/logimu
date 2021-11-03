@@ -21,7 +21,7 @@ pub trait Component {
 	fn output_type(&self, output: usize) -> Option<OutputType>;
 
 	/// Generate IR for this component.
-	fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp));
+	fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), memory_size: usize) -> usize;
 }
 
 impl_dyn! {
@@ -30,7 +30,7 @@ impl_dyn! {
 		input_type(input: usize) -> Option<InputType>;
 		output_count() -> usize;
 		output_type(output: usize) -> Option<OutputType>;
-		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
+		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 	}
 }
 
@@ -130,10 +130,11 @@ macro_rules! gate {
 				(output < self.output_count()).then(|| OutputType { bits: self.bits })
 			}
 
-			fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) {
+			fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), _: usize) -> usize {
 				for i in inputs.iter().skip(1) {
 					out(IrOp::$op { a: inputs[0], b: *i, out: outputs[0] })
 				}
+				0
 			}
 		}
 	};
@@ -172,8 +173,9 @@ impl Component for NotGate {
 		(output < self.output_count()).then(|| OutputType { bits: self.bits })
 	}
 
-	fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) {
-		out(IrOp::Not { a: inputs[0], out: outputs[0] })
+	fn generate_ir(&self, inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), _: usize) -> usize {
+		out(IrOp::Not { a: inputs[0], out: outputs[0] });
+		0
 	}
 }
 
@@ -206,8 +208,9 @@ impl Component for In {
 		(output == 0).then(|| OutputType { bits: self.bits })
 	}
 
-	fn generate_ir(&self, _: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) {
-		out(IrOp::In { out: outputs[0], index: self.index })
+	fn generate_ir(&self, _: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), _: usize) -> usize {
+		out(IrOp::In { out: outputs[0], index: self.index });
+		0
 	}
 }
 
@@ -240,8 +243,9 @@ impl Component for Out {
 		None
 	}
 
-	fn generate_ir(&self, inputs: &[usize], _: &[usize], out: &mut dyn FnMut(IrOp)) {
-		out(IrOp::Out { a: inputs[0], index: self.index })
+	fn generate_ir(&self, inputs: &[usize], _: &[usize], out: &mut dyn FnMut(IrOp), _: usize) -> usize {
+		out(IrOp::Out { a: inputs[0], index: self.index });
+		0
 	}
 }
 
@@ -270,23 +274,23 @@ mod test {
 		AndGate::new(
 			NonZeroOneU8::new(2).unwrap(),
 			NonZeroU8::new(1).unwrap(),
-		).generate_ir(&[0, 1], &[2], &mut |op| ir.push(op));
+		).generate_ir(&[0, 1], &[2], &mut |op| ir.push(op), 0);
 		OrGate::new(
 			NonZeroOneU8::new(2).unwrap(),
 			NonZeroU8::new(1).unwrap(),
-		).generate_ir(&[0, 1], &[3], &mut |op| ir.push(op));
+		).generate_ir(&[0, 1], &[3], &mut |op| ir.push(op), 0);
 		NotGate::new(
 			NonZeroU8::new(1).unwrap(),
-		).generate_ir(&[2], &[4], &mut |op| ir.push(op));
+		).generate_ir(&[2], &[4], &mut |op| ir.push(op), 0);
 		AndGate::new(
 			NonZeroOneU8::new(2).unwrap(),
 			NonZeroU8::new(1).unwrap(),
-		).generate_ir(&[3, 4], &[5], &mut |op| ir.push(op));
+		).generate_ir(&[3, 4], &[5], &mut |op| ir.push(op), 0);
 
 		XorGate::new(
 			NonZeroOneU8::new(2).unwrap(),
 			NonZeroU8::new(1).unwrap(),
-		).generate_ir(&[0, 1], &[6], &mut |op| ir.push(op));
+		).generate_ir(&[0, 1], &[6], &mut |op| ir.push(op), 0);
 		
 		let (a, b) = (0b1100, 0b0110);
 		let mut mem = [a, b, 0, 0, 0, 0, 0];

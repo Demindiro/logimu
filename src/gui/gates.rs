@@ -195,7 +195,19 @@ impl ComponentPlacer for NotGate {
 	}
 }
 
-impl_cc!(In, &[], CENTER);
+impl CircuitComponent for In {
+	fn inputs(&self) -> &[PointOffset] {
+		&[]
+	}
+
+	fn outputs(&self) -> &[PointOffset] {
+		CENTER
+	}
+
+	fn external_input(&self) -> Option<usize> {
+		Some(self.index)
+	}
+}
 
 #[typetag::serde]
 impl ComponentPlacer for In {
@@ -211,13 +223,21 @@ impl ComponentPlacer for In {
 			.unwrap_or(Color32::BLUE);
 		painter.add(Shape::Rect(RectShape { corner_radius: 0.0, fill, rect, stroke }));
 	}
+}
 
-	fn external_input(&self) -> Option<usize> {
+impl CircuitComponent for Out {
+	fn inputs(&self) -> &[PointOffset] {
+		CENTER
+	}
+
+	fn outputs(&self) -> &[PointOffset] {
+		&[]
+	}
+
+	fn external_output(&self) -> Option<usize> {
 		Some(self.index)
 	}
 }
-
-impl_cc!(Out, CENTER, &[]);
 
 #[typetag::serde]
 impl ComponentPlacer for Out {
@@ -231,9 +251,5 @@ impl ComponentPlacer for Out {
 		let fill = outputs.get(self.index).map(|i| [Color32::DARK_GREEN, Color32::GREEN][*i & 1])
 			.unwrap_or(Color32::BLUE);
 		painter.add(Shape::Circle(CircleShape { center, radius: 8.0, fill, stroke }));
-	}
-
-	fn external_output(&self) -> Option<usize> {
-		Some(self.index)
 	}
 }

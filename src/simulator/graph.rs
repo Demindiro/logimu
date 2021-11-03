@@ -254,7 +254,7 @@ where
 				self.gen(&mut ir, nexus, &mut mem_size, &mut nexus_visited);
 				let inp  = out.inputs .iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
 				let outp = out.outputs.iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
-				out.component.generate_ir(&inp, &outp, &mut |op| ir.push(op));
+				mem_size += out.component.generate_ir(&inp, &outp, &mut |op| ir.push(op), mem_size);
 			}
 		}
 
@@ -283,7 +283,7 @@ where
 			}
 			let inp  = node.inputs .iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
 			let outp = node.outputs.iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
-			node.component.generate_ir(&inp, &outp, &mut |op| ir.push(op));
+			*mem_size += node.component.generate_ir(&inp, &outp, &mut |op| ir.push(op), *mem_size);
 		}
 	}
 }

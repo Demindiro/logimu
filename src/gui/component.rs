@@ -23,14 +23,6 @@ where
 	fn name(&self) -> &str;
 
 	fn draw(&self, painter: &Painter, position: Pos2, direction: Direction, inputs: &[usize], outputs: &[usize]);
-
-	fn external_input(&self) -> Option<usize> {
-		None
-	}
-	
-	fn external_output(&self) -> Option<usize> {
-		None
-	}
 }
 
 impl_dyn! {
@@ -39,7 +31,7 @@ impl_dyn! {
 		input_type(input: usize) -> Option<InputType>;
 		output_count() -> usize;
 		output_type(output: usize) -> Option<OutputType>;
-		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
+		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 	}
 }
 
@@ -47,5 +39,7 @@ impl_dyn! {
 	CircuitComponent for Box<dyn ComponentPlacer> {
 		inputs() -> &[PointOffset];
 		outputs() -> &[PointOffset];
+		external_input() -> Option<usize>;
+		external_output() -> Option<usize>;
 	}
 }
