@@ -259,8 +259,17 @@ impl epi::App for App {
 			// Draw existing components
 			for (c, p, d) in self.circuit.components(aabb) {
 				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
+				let aabb = d * c.aabb();
+				let delta = Vec2::new(8.0, 8.0);
+				let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
+				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
+				let rect = Rect { min, max };
+				if e.hover_pos().map_or(false, |p| rect.contains(p)) {
+					let stroke = Stroke::new(2.0, Color32::YELLOW);
+					paint.rect_stroke(rect, 8.0, stroke);
+				}
 				for &po in c.inputs().into_iter().chain(c.outputs()) {
-					(d * po).map(|po| (p + po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN)));
+					(p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
 				}
 			}
 

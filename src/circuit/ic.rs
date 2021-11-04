@@ -74,4 +74,14 @@ impl CircuitComponent for Ic
 	fn outputs(&self) -> &[PointOffset] {
 		&self.outputs
 	}
+
+	fn aabb(&self) -> RelativeAabb {
+		let mut iter = self.inputs().iter().chain(self.outputs());
+		let s = *iter.next().unwrap();
+		let mut aabb = RelativeAabb::new(s, s);
+		iter.for_each(|p| aabb = aabb.expand(*p));
+		aabb.min.x -= 1;
+		aabb.max.x += 1;
+		aabb
+	}
 }

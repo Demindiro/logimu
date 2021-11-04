@@ -1,6 +1,6 @@
 use crate::impl_dyn;
 use crate::simulator::{Component, InputType, OutputType, ir::IrOp};
-use crate::circuit::{CircuitComponent, Direction, PointOffset};
+use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 use core::any::Any;
 use eframe::egui::{Painter, Vec2, Pos2};
 
@@ -41,5 +41,6 @@ impl_dyn! {
 		outputs() -> &[PointOffset];
 		external_input() -> Option<usize>;
 		external_output() -> Option<usize>;
+		aabb() -> RelativeAabb;
 	}
 }
