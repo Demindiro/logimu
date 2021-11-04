@@ -1,3 +1,7 @@
+mod ic;
+
+pub use ic::Ic;
+
 use crate::impl_dyn;
 use super::simulator;
 use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle, GraphIter, NexusHandle, Port};
@@ -146,6 +150,14 @@ where
 
 	/// All the outputs of this component.
 	fn outputs(&self) -> &[PointOffset];
+
+	fn external_input(&self) -> Option<usize> {
+		None
+	}
+	
+	fn external_output(&self) -> Option<usize> {
+		None
+	}
 }
 
 impl_dyn! {
@@ -154,7 +166,7 @@ impl_dyn! {
 		input_type(input: usize) -> Option<InputType>;
 		output_count() -> usize;
 		output_type(output: usize) -> Option<OutputType>;
-		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
+		generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 	}
 }
 
@@ -257,12 +269,10 @@ where
 		}
 	}
 
+	// TODO make non-mutable
 	pub fn generate_ir(&mut self) -> (Vec<IrOp>, usize) {
 		self.connect_wire(usize::MAX);
-
-		let (ir, mem_size) = self.graph.generate_ir();
-
-		(ir, mem_size)
+		self.graph.generate_ir()
 	}
 
 	fn find_ports_at_internal<'a, F, G>(&'a self, pos: Point, mut in_callback: F, mut out_callback: G)
