@@ -140,16 +140,6 @@ impl epi::App for App {
 	/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
 
-		// TODO make components clickable instead of using numpads
-		{
-			use egui::Key::*;
-			for (i, b) in [Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9].iter().enumerate() {
-				if ctx.input().key_pressed(*b) {
-					self.inputs.get_mut(i).map(|e| *e = !*e);
-				}
-			}
-		}
-
 		// TODO don't run circuit every frame
 		let (ir, mem_size) = self.circuit.generate_ir();
 		if mem_size != self.memory.len() {
@@ -257,6 +247,7 @@ impl epi::App for App {
 			let aabb = circuit::Aabb::new(pos2point(rect.min), pos2point(rect.max));
 
 			// Draw existing components
+			let mut hovering_over_component = false;
 			for (c, p, d) in self.circuit.components(aabb) {
 				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
 				let aabb = d * c.aabb();
@@ -267,6 +258,9 @@ impl epi::App for App {
 				if e.hover_pos().map_or(false, |p| rect.contains(p)) {
 					let stroke = Stroke::new(2.0, Color32::YELLOW);
 					paint.rect_stroke(rect, 8.0, stroke);
+					hovering_over_component = true;
+					// Toggle input if it is one
+					c.external_input().map(|i| e.clicked().then(|| self.inputs[i] = !self.inputs[i]));
 				}
 				for &po in c.inputs().into_iter().chain(c.outputs()) {
 					(p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
@@ -275,8 +269,8 @@ impl epi::App for App {
 
 			// Draw existing wires
 			for (w, h) in self.circuit.wires(aabb) {
-				let stroke = match e.hover_pos().map(|p| w.intersect_point(pos2point(p))) {
-					Some(true) => Stroke::new(3.0, Color32::YELLOW),
+				let stroke = match !hovering_over_component && e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p))) {
+					true => Stroke::new(3.0, Color32::YELLOW),
 					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][*self.memory.get(h.into_raw()).unwrap_or(&0) & 1]),
 				};
 				paint.line_segment([point2pos(w.from), point2pos(w.to)], stroke);
@@ -298,7 +292,7 @@ impl epi::App for App {
 					} else {
 						self.component = Some(c);
 					}
-				} else {
+				} else if !hovering_over_component {
 					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
 
 					if let Some(start) = self.wire_start {
