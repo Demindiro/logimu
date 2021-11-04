@@ -247,7 +247,7 @@ impl epi::App for App {
 			let aabb = circuit::Aabb::new(pos2point(rect.min), pos2point(rect.max));
 
 			// Draw existing components
-			let mut hovering_over_component = false;
+			let mut hover_box = None;
 			for (c, p, d) in self.circuit.components(aabb) {
 				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
 				let aabb = d * c.aabb();
@@ -256,9 +256,7 @@ impl epi::App for App {
 				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
 				let rect = Rect { min, max };
 				if e.hover_pos().map_or(false, |p| rect.contains(p)) {
-					let stroke = Stroke::new(2.0, Color32::YELLOW);
-					paint.rect_stroke(rect, 8.0, stroke);
-					hovering_over_component = true;
+					hover_box = Some(rect);
 					// Toggle input if it is one
 					c.external_input().map(|i| e.clicked().then(|| self.inputs[i] = !self.inputs[i]));
 				}
@@ -269,7 +267,7 @@ impl epi::App for App {
 
 			// Draw existing wires
 			for (w, h) in self.circuit.wires(aabb) {
-				let stroke = match !hovering_over_component && e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p))) {
+				let stroke = match hover_box.is_none() && e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p))) {
 					true => Stroke::new(3.0, Color32::YELLOW),
 					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][*self.memory.get(h.into_raw()).unwrap_or(&0) & 1]),
 				};
@@ -292,7 +290,7 @@ impl epi::App for App {
 					} else {
 						self.component = Some(c);
 					}
-				} else if !hovering_over_component {
+				} else if hover_box.is_none() {
 					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
 
 					if let Some(start) = self.wire_start {
@@ -310,6 +308,8 @@ impl epi::App for App {
 					}
 				}
 			}
+
+			hover_box.map(|rect| paint.rect_stroke(rect, 8.0, Stroke::new(2.0, Color32::YELLOW)));
 		});
 	}
 }
