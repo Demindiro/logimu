@@ -1,7 +1,7 @@
 use super::ComponentPlacer;
 use crate::simulator;
 use crate::simulator::{AndGate, OrGate, XorGate, NotGate, In, Out};
-use crate::circuit::{Direction, CircuitComponent, PointOffset};
+use crate::circuit::{Direction, CircuitComponent, PointOffset, RelativeAabb};
 use core::num::NonZeroU8;
 use eframe::egui::{Painter, Pos2, Stroke, Color32, Rect, Vec2, Shape};
 use eframe::egui::paint::{CircleShape, RectShape, Mesh, Vertex};
@@ -12,7 +12,7 @@ const OUT: &[PointOffset] = &[PointOffset::new(1, 0)];
 const CENTER: &[PointOffset] = &[PointOffset::new(0, 0)];
 
 macro_rules! impl_cc {
-	($name:ident, $in:expr, $out:expr) => {
+	($name:ident, $in:expr, $out:expr, (($min_x:literal, $min_y:literal), ($max_x:literal, $max_y:literal))) => {
 		impl CircuitComponent for $name {
 			fn inputs(&self) -> &[PointOffset] {
 				$in
@@ -21,11 +21,15 @@ macro_rules! impl_cc {
 			fn outputs(&self) -> &[PointOffset] {
 				$out
 			}
+
+			fn aabb(&self) -> RelativeAabb {
+				RelativeAabb::new(PointOffset::new($min_x, $min_y), PointOffset::new($max_x, $max_y))
+			}
 		}
 	};
 }
 
-impl_cc!(AndGate, IN, OUT);
+impl_cc!(AndGate, IN, OUT, ((-1, -1), (1, 1)));
 
 #[typetag::serde]
 impl ComponentPlacer for AndGate {
@@ -58,7 +62,7 @@ impl ComponentPlacer for AndGate {
 	}
 }
 
-impl_cc!(OrGate, IN, OUT);
+impl_cc!(OrGate, IN, OUT, ((-1, -1), (1, 1)));
 
 #[typetag::serde]
 impl ComponentPlacer for OrGate {
@@ -110,7 +114,7 @@ impl ComponentPlacer for OrGate {
 	}
 }
 
-impl_cc!(XorGate, IN, OUT);
+impl_cc!(XorGate, IN, OUT, ((-1, -1), (1, 1)));
 
 #[typetag::serde]
 impl ComponentPlacer for XorGate {
@@ -169,7 +173,7 @@ impl ComponentPlacer for XorGate {
 	}
 }
 
-impl_cc!(NotGate, IN_NOT, OUT);
+impl_cc!(NotGate, IN_NOT, OUT, ((-1, 0), (1, 0)));
 
 #[typetag::serde]
 impl ComponentPlacer for NotGate {
@@ -207,6 +211,10 @@ impl CircuitComponent for In {
 	fn external_input(&self) -> Option<usize> {
 		Some(self.index)
 	}
+
+	fn aabb(&self) -> RelativeAabb {
+		RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(1, 0))
+	}
 }
 
 #[typetag::serde]
@@ -236,6 +244,10 @@ impl CircuitComponent for Out {
 
 	fn external_output(&self) -> Option<usize> {
 		Some(self.index)
+	}
+
+	fn aabb(&self) -> RelativeAabb {
+		RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(1, 0))
 	}
 }
 

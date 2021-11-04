@@ -35,6 +35,9 @@ pub struct PointOffset {
 }
 
 impl PointOffset {
+	pub const MIN: Self = Self { x: i8::MIN, y: i8::MIN };
+	pub const MAX: Self = Self { x: i8::MAX, y: i8::MAX };
+
 	pub const fn new(x: i8, y: i8) -> Self {
 		Self { x, y }
 	}
@@ -70,16 +73,15 @@ impl Direction {
 }
 
 impl Mul<PointOffset> for Direction {
-	type Output = Option<PointOffset>;
+	type Output = PointOffset;
 
 	fn mul(self, rhs: PointOffset) -> Self::Output {
-		let (x, y) = match self {
-			Self::Right => (rhs.x, rhs.y),
-			Self::Down => (rhs.y.checked_neg()?, rhs.x),
-			Self::Left => (rhs.x.checked_neg()?, rhs.y.checked_neg()?),
-			Self::Up => (rhs.y, rhs.x.checked_neg()?),
-		};
-		Some(PointOffset { x, y })
+		match self {
+			Self::Right => PointOffset::new(rhs.x, rhs.y),
+			Self::Down => PointOffset::new(-rhs.y, rhs.x),
+			Self::Left => PointOffset::new(-rhs.x, -rhs.y),
+			Self::Up => PointOffset::new(rhs.y, -rhs.x),
+		}
 	}
 }
 
@@ -103,6 +105,38 @@ impl Aabb {
 	/// Check if this AABB contains a point.
 	pub fn intersect_point(&self, p: Point) -> bool {
 		self.min.x <= p.x && p.x <= self.max.x && self.min.y <= p.y && p.y <= self.max.y
+	}
+}
+#[derive(Clone, Copy, Debug)]
+pub struct RelativeAabb {
+	pub min: PointOffset,
+	pub max: PointOffset,
+}
+
+impl RelativeAabb {
+	/// Create a new AABB containing two points as tightly as possible.
+	pub fn new(p1: PointOffset, p2: PointOffset) -> Self {
+		Self {
+			min: PointOffset { x: p1.x.min(p2.x), y: p1.y.min(p2.y) },
+			max: PointOffset { x: p1.x.max(p2.x), y: p1.y.max(p2.y) },
+		}
+	}
+
+	/// Create an AABB containing both this AABB and the given point.
+	pub fn expand(mut self, p: PointOffset) -> Self {
+		self.min.x = self.min.x.min(p.x);
+		self.min.y = self.min.y.min(p.y);
+		self.max.x = self.max.x.max(p.x);
+		self.max.y = self.max.y.max(p.y);
+		self
+	}
+}
+
+impl Mul<RelativeAabb> for Direction {
+	type Output = RelativeAabb;
+
+	fn mul(self, rhs: RelativeAabb) -> Self::Output {
+		RelativeAabb::new(self * rhs.min, self * rhs.max)
 	}
 }
 
@@ -158,6 +192,8 @@ where
 	fn external_output(&self) -> Option<usize> {
 		None
 	}
+
+	fn aabb(&self) -> RelativeAabb;
 }
 
 impl_dyn! {
@@ -174,6 +210,7 @@ impl_dyn! {
 	CircuitComponent for &dyn CircuitComponent {
 		inputs() -> &[PointOffset];
 		outputs() -> &[PointOffset];
+		aabb() -> RelativeAabb;
 	}
 }
 
@@ -283,13 +320,11 @@ where
 		//self.intersect_zone(position).find_ports_at(self, position, in_callback, out_callback);
 		for (c, h, &(p, d)) in self.graph.nodes() {
 			for (i, &inp) in c.inputs().iter().enumerate() {
-				(d * inp)
-					.and_then(|inp| p + inp)
+				(p + d * inp)
 					.map(|inp| (inp == pos).then(|| in_callback(h, i)));
 			}
 			for (i, &outp) in c.outputs().iter().enumerate() {
-				(d * outp)
-					.and_then(|outp| p + outp)
+				(p + d * outp)
 					.map(|outp| (outp == pos).then(|| out_callback(h, i)));
 			}
 		}
