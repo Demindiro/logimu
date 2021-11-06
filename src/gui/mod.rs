@@ -46,6 +46,7 @@ pub enum SaveCircuitError {
 	Serde(ron::Error),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ComponentOrWire {
 	Component(GraphNodeHandle),
 	Wire(WireHandle),
@@ -60,6 +61,7 @@ pub struct App {
 	ic_components: HashMap<Box<str>, Ic>,
 
 	selected: Option<ComponentOrWire>,
+	selected_wires: Vec<WireHandle>,
 	
 	inputs: Vec<usize>,
 	outputs: Vec<usize>,
@@ -82,6 +84,7 @@ impl App {
 			ic_components: Default::default(),
 
 			selected: None,
+			selected_wires: Default::default(),
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
@@ -261,10 +264,32 @@ impl epi::App for App {
 				let (x, y) = (f32::from(point.x), f32::from(point.y));
 				Pos2::new(rect.min.x + x * 16.0, rect.min.y + y * 16.0)
 			};
+			let draw_aabb = |point: circuit::Point, aabb: circuit::RelativeAabb, stroke: Stroke| {
+				let delta = Vec2::new(8.0, 8.0);
+				let (min, max) = ((point + aabb.min).unwrap(), (point + aabb.max).unwrap());
+				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
+				let rect = Rect { min, max };
+				paint.rect_stroke(rect, 8.0, stroke);
+			};
 
 			let wire_stroke = Stroke::new(3.0, Color32::WHITE);
+			let selected_color = Color32::LIGHT_BLUE.linear_multiply(0.5);
 
 			let aabb = circuit::Aabb::new(pos2point(rect.min), pos2point(rect.max));
+
+			// Clear current selected if no modifiers are pressed during select
+			if e.clicked_by(PointerButton::Secondary) && !ui.input().modifiers.shift {
+				self.selected_wires.clear();
+			}
+
+			// Draw outlines for selected wires
+			for w in self.selected_wires.iter() {
+				let (w, ..) = self.circuit.wire(*w).unwrap();
+				let (from, to) = (point2pos(w.from), point2pos(w.to));
+				paint.line_segment([from, to], Stroke::new(6.0, selected_color));
+				paint.circle_filled(from, 3.0, selected_color);
+				paint.circle_filled(to, 3.0, selected_color);
+			}
 
 			// Draw existing components
 			let mut hover_box = None;
@@ -293,12 +318,17 @@ impl epi::App for App {
 			}
 
 			// Draw existing wires
-			for (w, h) in self.circuit.wires(aabb) {
-				let stroke = match hover_box.is_none() && e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p))) {
+			for (w, wh, h) in self.circuit.wires(aabb) {
+				let intersects = hover_box.is_none() && e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p)));
+				let stroke = match intersects {
 					true => Stroke::new(3.0, Color32::YELLOW),
 					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][*self.memory.get(h.into_raw()).unwrap_or(&0) & 1]),
 				};
-				paint.line_segment([point2pos(w.from), point2pos(w.to)], stroke);
+				if intersects && e.clicked_by(PointerButton::Secondary) {
+					self.selected_wires.push(wh);
+				}
+				let (from, to) = (point2pos(w.from), point2pos(w.to));
+				paint.line_segment([from, to], stroke);
 			}
 
 			// Draw interaction objects (pointer, component, wire ...)
@@ -340,22 +370,13 @@ impl epi::App for App {
 			}
 
 			// Draw a box around the selected component
-			match self.selected {
-				Some(ComponentOrWire::Component(h))=> {
-					if let Some((c, p, d)) = self.circuit.component(h) {
-						let aabb = d * c.aabb();
-						let delta = Vec2::new(8.0, 8.0);
-						let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
-						let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
-						let rect = Rect { min, max };
-						let clr = Color32::LIGHT_BLUE.linear_multiply(0.5);
-						paint.rect_stroke(rect, 8.0, Stroke::new(2.0, clr));
-					} else {
-						self.selected = None;
-					}
+			let stroke = Stroke::new(2.0, selected_color);
+			if let Some(ComponentOrWire::Component(h)) = self.selected {
+				if let Some((c, p, d)) = self.circuit.component(h) {
+					draw_aabb(p, d * c.aabb(), stroke);
+				} else {
+					self.selected = None;
 				}
-				Some(ComponentOrWire::Wire(h)) => todo!(),
-				None => (),
 			}
 
 			// Draw a box around the hovered component

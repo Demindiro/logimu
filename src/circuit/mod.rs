@@ -214,7 +214,7 @@ impl_dyn! {
 	}
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WireHandle(usize);
 
 /// A collection of interconnected wires and components.
@@ -289,6 +289,10 @@ where
 	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), &'static str> {
 		todo!();
 		Ok(())
+	}
+
+	pub fn wire(&self, handle: WireHandle) -> Option<(Wire, NexusHandle)> {
+		self.wires.get(handle.0).cloned()
 	}
 
 	pub fn wires(&self, aabb: Aabb) -> WireIter<C> {
@@ -541,13 +545,13 @@ impl<'a, C> Iterator for WireIter<'a, C>
 where
 	C: CircuitComponent,
 {
-	type Item = (&'a Wire, NexusHandle);
+	type Item = (&'a Wire, WireHandle, NexusHandle);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		while let Some((w, h)) = self.circuit.wires.get(self.index) {
 			self.index += 1;
 			if self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to) {
-				return Some((w, *h));
+				return Some((w, WireHandle(self.index - 1), *h));
 			}
 		}
 		None
