@@ -11,6 +11,7 @@ use component::*;
 use crate::circuit;
 use crate::simulator;
 use crate::simulator::ir::IrOp;
+use crate::simulator::GraphNodeHandle;
 use crate::circuit::{Circuit, CircuitComponent, Ic};
 
 use core::any::TypeId;
@@ -52,6 +53,8 @@ pub struct App {
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
 	ic_components: HashMap<Box<str>, Ic>,
+
+	selected_component: Option<GraphNodeHandle>,
 	
 	inputs: Vec<usize>,
 	outputs: Vec<usize>,
@@ -72,6 +75,8 @@ impl App {
 			wire_start: None,
 			circuit: Default::default(),
 			ic_components: Default::default(),
+
+			selected_component: None,
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
@@ -248,7 +253,7 @@ impl epi::App for App {
 
 			// Draw existing components
 			let mut hover_box = None;
-			for (c, p, d) in self.circuit.components(aabb) {
+			for (c, p, d, h) in self.circuit.components(aabb) {
 				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
 				let aabb = d * c.aabb();
 				let delta = Vec2::new(8.0, 8.0);
@@ -256,9 +261,14 @@ impl epi::App for App {
 				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
 				let rect = Rect { min, max };
 				if e.hover_pos().map_or(false, |p| rect.contains(p)) {
+					// Draw a box around the component
 					hover_box = Some(rect);
-					// Toggle input if it is one
-					c.external_input().map(|i| e.clicked().then(|| self.inputs[i] = !self.inputs[i]));
+					if e.clicked() {
+						// Mark the component as selected.
+						self.selected_component = Some(h);
+						// Toggle input if it is one
+						c.external_input().map(|i| e.clicked().then(|| self.inputs[i] = !self.inputs[i]));
+					}
 				}
 				for &po in c.inputs().into_iter().chain(c.outputs()) {
 					(p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
@@ -309,6 +319,22 @@ impl epi::App for App {
 				}
 			}
 
+			// Draw a box around the selected component
+			if let Some(h) = self.selected_component {
+				if let Some((c, p, d)) = self.circuit.component(h) {
+					let aabb = d * c.aabb();
+					let delta = Vec2::new(8.0, 8.0);
+					let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
+					let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
+					let rect = Rect { min, max };
+					let clr = Color32::LIGHT_BLUE.linear_multiply(0.5);
+					paint.rect_stroke(rect, 8.0, Stroke::new(2.0, clr));
+				} else {
+					self.selected_component = None;
+				}
+			}
+
+			// Draw a box around the hovered component
 			hover_box.map(|rect| paint.rect_stroke(rect, 8.0, Stroke::new(2.0, Color32::YELLOW)));
 		});
 	}

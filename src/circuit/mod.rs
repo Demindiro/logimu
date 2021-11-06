@@ -297,6 +297,10 @@ where
 		handle.into_raw()
 	}
 
+	pub fn component(&self, handle: GraphNodeHandle) -> Option<(&C, Point, Direction)> {
+		self.graph.get(handle).map(|(c, &(p, d))| (c, p, d))
+	}
+
 	pub fn components(&self, aabb: Aabb) -> ComponentIter<C> {
 		ComponentIter {
 			iter: self.graph.nodes(),
@@ -548,13 +552,13 @@ impl<'a, C> Iterator for ComponentIter<'a, C>
 where
 	C: CircuitComponent,
 {
-	type Item = (&'a C, Point, Direction);
+	type Item = (&'a C, Point, Direction, GraphNodeHandle);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		// TODO check AABBs.
-		while let Some((c, _, &(p, d))) = self.iter.next() {
+		while let Some((c, h, &(p, d))) = self.iter.next() {
 			self.index += 1;
-			return Some((c, p, d));
+			return Some((c, p, d, h));
 		}
 		None
 	}
