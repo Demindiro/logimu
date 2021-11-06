@@ -4,7 +4,7 @@ pub use ic::Ic;
 
 use crate::impl_dyn;
 use super::simulator;
-use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle, GraphIter, NexusHandle, Port};
+use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle, GraphIter, NexusHandle, Port, RemoveError};
 
 use core::fmt;
 use core::mem;
@@ -295,6 +295,10 @@ where
 
 		// TODO add to zones. This requires per component AABBs.
 		handle.into_raw()
+	}
+
+	pub fn remove_component(&mut self, handle: GraphNodeHandle) -> Result<(), RemoveError> {
+		self.graph.remove(handle)
 	}
 
 	pub fn component(&self, handle: GraphNodeHandle) -> Option<(&C, Point, Direction)> {

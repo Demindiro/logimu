@@ -159,6 +159,10 @@ impl epi::App for App {
 			self.component_direction = self.component_direction.rotate_clockwise();
 		}
 
+		if ctx.input().key_pressed(Key::Backspace) || ctx.input().key_pressed(Key::Delete) {
+			self.selected_component.take().map(|h| self.circuit.remove_component(h));
+		}
+
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {

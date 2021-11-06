@@ -172,12 +172,13 @@ where
 	}
 
 	pub fn remove(&mut self, component: GraphNodeHandle) -> Result<(), RemoveError> {
-		let component = component.0;
-		let mut node = if let Some(e) = self.nodes.get_mut(component) {
+
+		// Remove the component itself
+		let mut node = if let Some(e) = self.nodes.get_mut(component.0) {
 			match e {
 				Entry::Occupied { .. } => {
 					let node = mem::replace(e, Entry::Free { next: self.free_node });
-					self.free_node = Some(component);
+					self.free_node = Some(component.0);
 					node
 				}
 				_ => return Err(RemoveError::InvalidNode),
@@ -187,27 +188,22 @@ where
 		};
 		let node = node.as_occupied_mut().unwrap();
 
-		todo!();
-
-		/*
-		for (port, conns) in node.inputs.iter_mut().enumerate() {
-			let con_in = Connection { node: component, port };
-			for con_out in conns {
-				let node = self.nodes[con_out.node].as_occupied_mut().unwrap();
-				let i = node.outputs[con_out.port].iter().position(|e| *e == con_in).unwrap();
-				node.outputs[con_out.port].remove(i);
-			}
+		// Disconnect from any nexuses
+		dbg!(component);
+		for i in node.inputs.into_iter().filter_map(|i| *i) {
+			let outp = &mut self.nexuses[i.0].as_occupied_mut().unwrap().outputs;
+			dbg!(&outp);
+			outp.remove(outp.iter().position(|e| *e == component).unwrap());
+			dbg!(&outp);
+		}
+		for o in node.outputs.into_iter().filter_map(|i| *i) {
+			let inp = &mut self.nexuses[o.0].as_occupied_mut().unwrap().inputs;
+			inp.remove(inp.iter().position(|e| *e == component).unwrap());
 		}
 
-		for (port, conns) in node.inputs.iter_mut().enumerate() {
-			let con_out = Connection { node: component, port };
-			for con_in in conns {
-				let node = self.nodes[con_in.node].as_occupied_mut().unwrap();
-				let i = node.inputs[con_in.port].iter().position(|e| *e == con_out).unwrap();
-				node.outputs[con_in.port].remove(i);
-			}
-		}
-		*/
+		// Remove from inputs and/or outputs list if it is one.
+		self.inputs .iter().position(|e| *e == component.0).map(|i| self.inputs .remove(i));
+		self.outputs.iter().position(|e| *e == component.0).map(|i| self.outputs.remove(i));
 
 		Ok(())
 	}
