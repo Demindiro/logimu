@@ -311,7 +311,7 @@ impl epi::App for App {
 						// Mark the component as selected.
 						self.selected = Some(ComponentOrWire::Component(h));
 					}
-					if e.clicked_by(PointerButton::Primary) {
+					if e.clicked_by(PointerButton::Middle) {
 						// Toggle input if it is one
 						c.external_input().map(|i| self.inputs[i] = !self.inputs[i]);
 					}
@@ -351,7 +351,7 @@ impl epi::App for App {
 					} else {
 						self.component = Some(c);
 					}
-				} else if hover_box.is_none() {
+				} else {
 					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
 
 					if let Some(start) = self.wire_start {
