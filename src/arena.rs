@@ -1,6 +1,7 @@
 use core::mem;
 use core::ops::{Index, IndexMut};
 
+#[derive(Debug)]
 enum Entry<T> {
 	Free { next: Option<usize> },
 	Occupied { value: T },

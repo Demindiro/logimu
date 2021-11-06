@@ -167,6 +167,7 @@ impl epi::App for App {
 			self.component_direction = self.component_direction.rotate_clockwise();
 		}
 
+		// Check if we should remove any selected components and/or wires
 		if ctx.input().key_pressed(Key::Backspace) || ctx.input().key_pressed(Key::Delete) {
 			match self.selected.take() {
 				Some(ComponentOrWire::Component(h)) => {
@@ -174,6 +175,9 @@ impl epi::App for App {
 				}
 				Some(ComponentOrWire::Wire(h)) => todo!(),
 				None => (),
+			}
+			for w in self.selected_wires.drain(..) {
+				self.circuit.remove_wire(w).unwrap();
 			}
 		}
 
@@ -319,7 +323,7 @@ impl epi::App for App {
 
 			// Draw existing wires
 			for (w, wh, h) in self.circuit.wires(aabb) {
-				let intersects = hover_box.is_none() && e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p)));
+				let intersects = e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p)));
 				let stroke = match intersects {
 					true => Stroke::new(3.0, Color32::YELLOW),
 					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][*self.memory.get(h.index()).unwrap_or(&0) & 1]),

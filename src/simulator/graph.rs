@@ -103,7 +103,8 @@ where
 
 	pub fn new_nexus(&mut self, userdata: Un) -> NexusHandle {
 		let nexus = Nexus { inputs: Vec::new(), outputs: Vec::new(), userdata };
-		NexusHandle(self.nexuses.insert(nexus))
+		let h = NexusHandle(self.nexuses.insert(nexus));
+		h
 	}
 
 	pub fn get(&self, handle: GraphNodeHandle) -> Option<(&C, &Uc)> {
@@ -113,15 +114,12 @@ where
 	pub fn remove(&mut self, component: GraphNodeHandle) -> Result<(), RemoveError> {
 
 		// Remove the component itself
-		let mut node = self.nodes.remove(component.0).ok_or(RemoveError::InvalidNode)?;
+		let node = self.nodes.remove(component.0).ok_or(RemoveError::InvalidNode)?;
 
 		// Disconnect from any nexuses
-		dbg!(component);
 		for i in node.inputs.into_iter().filter_map(|i| *i) {
 			let outp = &mut self.nexuses[i.0].outputs;
-			dbg!(&outp);
 			outp.remove(outp.iter().position(|e| *e == component).unwrap());
-			dbg!(&outp);
 		}
 		for o in node.outputs.into_iter().filter_map(|i| *i) {
 			let inp = &mut self.nexuses[o.0].inputs;
@@ -131,6 +129,24 @@ where
 		// Remove from inputs and/or outputs list if it is one.
 		self.inputs .iter().position(|e| *e == component.0).map(|i| self.inputs .remove(i));
 		self.outputs.iter().position(|e| *e == component.0).map(|i| self.outputs.remove(i));
+
+		Ok(())
+	}
+
+	pub fn remove_nexus(&mut self, handle: NexusHandle) -> Result<(), RemoveNexusError> {
+
+		// Remove the nexus itself
+		let nexus = self.nexuses.remove(handle.0).ok_or(RemoveNexusError::InvalidNexus)?;
+
+		// Disconnect from any components
+		for i in nexus.inputs {
+			let outp = &mut self.nodes[i.0].outputs;
+			outp[outp.iter().position(|e| *e == Some(handle)).unwrap()] = None;
+		}
+		for o in nexus.outputs {
+			let inp = &mut self.nodes[o.0].inputs;
+			inp[inp.iter().position(|e| *e == Some(handle)).unwrap()] = None;
+		}
 
 		Ok(())
 	}
@@ -217,6 +233,12 @@ where
 pub enum RemoveError {
 	NotConnected,
 	InvalidNode,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum RemoveNexusError {
+	NotConnected,
+	InvalidNexus,
 }
 
 #[derive(Clone, Copy, Debug)]

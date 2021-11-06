@@ -3,6 +3,7 @@ mod ic;
 pub use ic::Ic;
 
 use crate::impl_dyn;
+use crate::arena::{Arena, Handle};
 use super::simulator;
 use super::simulator::{Component, InputType, OutputType, ir::IrOp, Graph, GraphNodeHandle, GraphIter, NexusHandle, Port, RemoveError};
 
@@ -215,7 +216,7 @@ impl_dyn! {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WireHandle(usize);
+pub struct WireHandle(Handle);
 
 /// A collection of interconnected wires and components.
 pub struct Circuit<C>
@@ -230,18 +231,21 @@ where
 	/// - Subzone: 64x64 points. Memory usage depends on amount of nodes (components & wires) in zone.
 	zones: Box<[[Zone; 1024]; 1024]>,
 	/// All wires in this circuit.
-	wires: Vec<(Wire, NexusHandle)>,
+	wires: Arena<(Wire, NexusHandle)>,
 	/// A graph connecting all nodes. Used for IR generation.
-	graph: Graph<C, (Point, Direction), Vec<usize>>,
+	graph: Graph<C, (Point, Direction), Vec<WireHandle>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ComponentOrWire {
+	Component(usize),
+	Wire(WireHandle),
 }
 
 /// A single zone in a circuit.
 pub struct Zone {
-	/// A mapping from point to component or wire.
-	///
-	/// - If MSB is 0, maps to wire.
-	/// - If MSB is 1, maps to component.
-	nodes: Vec<usize>,
+	/// A list of wires and nodes present in this zone.
+	nodes: Vec<ComponentOrWire>,
 }
 
 impl<C> Circuit<C>
@@ -254,24 +258,22 @@ where
 
 	pub fn add_wire(&mut self, wire: Wire) -> WireHandle {
 		let Aabb { min, max } = wire.aabb();
-		let index = self.wires.len();
 
 		// Add wire to existing nexus if it connects with one.
 		// Otherwise create a new nexus and add the wire to it.
 		let mut nexus = None;
-		self.intersect_point(wire.from, |i| nexus = Some(self.wires[i].1), |_| todo!());
+		self.intersect_point(wire.from, |i| nexus = Some(self.wires[i.0].1), |_| todo!());
 		self.intersect_point(wire.to, |i| {
 			nexus.is_some().then(|| todo!("handle connecting two separate wires with new wire"));
-			nexus = Some(self.wires[i].1);
+			nexus = Some(self.wires[i.0].1);
 		}, |_| todo!());
 		let nexus = nexus.unwrap_or_else(|| self.graph.new_nexus(Vec::new()));
-		self.graph.nexus_mut(nexus).unwrap().userdata.push(index);
-		let handle = WireHandle(self.wires.len());
-		self.wires.push((wire, nexus));
+		let handle = WireHandle(self.wires.insert((wire, nexus)));
+		self.graph.nexus_mut(nexus).unwrap().userdata.push(handle);
 
 		// Check if this wire connects with any components. If so, connect these components
 		// to this wire's nexus.
-		self.connect_wire(self.wires.len() - 1);
+		self.connect_wire(Some(handle));
 
 		let (min_x, min_y) = (min.x / 64, min.y / 64);
 		// Round down, then count up to max including max so zero-width/height
@@ -279,7 +281,7 @@ where
 		let (max_x, max_y) = (max.x / 64, max.y / 64);
 		for y in min_y..=max_y {
 			for x in min_x..=max_x {
-				self.zones[usize::from(y)][usize::from(x)].add_wire(index);
+				self.zones[usize::from(y)][usize::from(x)].add_wire(handle);
 			}
 		}
 		
@@ -287,7 +289,28 @@ where
 	}
 
 	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), &'static str> {
-		todo!();
+		let (wire, nexus) = self.wires.remove(handle.0).ok_or("invalid handle")?;
+
+		// Remove from zones.
+		let Aabb { min, max } = wire.aabb();
+		let (min_x, min_y) = (min.x / 64, min.y / 64);
+		// Round down, then count up to max including max so zero-width/height
+		// wires are visible.
+		let (max_x, max_y) = (max.x / 64, max.y / 64);
+		for y in min_y..=max_y {
+			for x in min_x..=max_x {
+				self.zones[usize::from(y)][usize::from(x)].remove_wire(handle);
+			}
+		}
+
+		// Remove from nexus.
+		let list = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
+		list.remove(list.iter().position(|e| *e == handle).unwrap());
+
+		// Remove nexus if it no longer has any wires.
+		if list.is_empty() {
+			self.graph.remove_nexus(nexus).unwrap();
+		}
 		Ok(())
 	}
 
@@ -296,10 +319,15 @@ where
 	}
 
 	pub fn wires(&self, aabb: Aabb) -> WireIter<C> {
+		let zone = Point::new(aabb.min.x / Zone::WIDTH, aabb.min.y / Zone::HEIGHT);
+		let zone_max = Point::new(aabb.max.x / Zone::WIDTH, aabb.max.y / Zone::HEIGHT);
 		WireIter {
 			circuit: self,
 			aabb,
-			index: 0,
+			zone,
+			zone_min_x: zone.x,
+			zone_max,
+			zone_index: 0,
 		}
 	}
 
@@ -330,41 +358,41 @@ where
 
 	// TODO make non-mutable
 	pub fn generate_ir(&mut self) -> (Vec<IrOp>, usize) {
-		self.connect_wire(usize::MAX);
+		self.connect_wire(None);
 		self.graph.generate_ir()
 	}
 
 	fn find_ports_at_internal<'a, F, G>(&'a self, pos: Point, mut in_callback: F, mut out_callback: G)
-	where
-		F: FnMut(GraphNodeHandle, usize),
-		G: FnMut(GraphNodeHandle, usize),
-	{
-		//self.intersect_zone(position).find_ports_at(self, position, in_callback, out_callback);
-		for (c, h, &(p, d)) in self.graph.nodes() {
-			for (i, &inp) in c.inputs().iter().enumerate() {
-				(p + d * inp)
-					.map(|inp| (inp == pos).then(|| in_callback(h, i)));
+		where
+			F: FnMut(GraphNodeHandle, usize),
+			G: FnMut(GraphNodeHandle, usize),
+			{
+				//self.intersect_zone(position).find_ports_at(self, position, in_callback, out_callback);
+				for (c, h, &(p, d)) in self.graph.nodes() {
+					for (i, &inp) in c.inputs().iter().enumerate() {
+						(p + d * inp)
+							.map(|inp| (inp == pos).then(|| in_callback(h, i)));
+					}
+					for (i, &outp) in c.outputs().iter().enumerate() {
+						(p + d * outp)
+							.map(|outp| (outp == pos).then(|| out_callback(h, i)));
+					}
+				}
 			}
-			for (i, &outp) in c.outputs().iter().enumerate() {
-				(p + d * outp)
-					.map(|outp| (outp == pos).then(|| out_callback(h, i)));
-			}
-		}
-	}
 
 	fn intersect_zone<'a>(&'a self, position: Point) -> &'a Zone {
 		let (x, y) = (usize::from(position.x) / 64, usize::from(position.y) / 64);
 		&self.zones[y][x]
 	}
 
-	fn intersect_point(&self, position: Point, wire_callback: impl FnMut(usize), component_callback: impl FnMut(usize)) {
+	fn intersect_point(&self, position: Point, wire_callback: impl FnMut(WireHandle), component_callback: impl FnMut(usize)) {
 		self.intersect_zone(position).intersect_point(self, position, wire_callback, component_callback);
 	}
 
-	fn connect_wire(&mut self, wire: usize) {
+	fn connect_wire(&mut self, wire: Option<WireHandle>) {
 		// TODO iterating all wires is wasteful.
 		// Connect components using wire information
-		for (w, nexus) in self.wires.iter() {
+		for (_, (w, nexus)) in self.wires.iter() {
 			// TODO handle overlapping ports (i.e. ports without wire)
 			for p in [w.from, w.to].iter() {
 				let (mut inp, mut outp) = (None, None);
@@ -382,7 +410,7 @@ where
 
 impl<C> Default for Circuit<C>
 where
-	C: CircuitComponent,
+C: CircuitComponent,
 {
 	fn default() -> Self {
 		use core::mem::MaybeUninit;
@@ -399,7 +427,7 @@ where
 		};
 		Self {
 			zones,
-			wires: Vec::new(),
+			wires: Default::default(),
 			graph: Graph::new(),
 		}
 	}
@@ -407,38 +435,38 @@ where
 
 impl<C> Serialize for Circuit<C>
 where
-	C: CircuitComponent + Serialize,
+C: CircuitComponent + Serialize,
 {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
-		let mut circuit = serializer.serialize_struct(stringify!(Circuit), 2)?;
-		// TODO avoid redundant box
-		circuit.serialize_field("wires", &self.wires.iter().map(|(w, _)| w).collect::<Box<_>>())?;
-		circuit.serialize_field(
-			"components",
-			&self.graph.nodes().map(|(c, _, (p, d))| (c, p, d)).collect::<Box<_>>(),
-		)?;
-		circuit.end()
-	}
+		where
+			S: Serializer,
+		{
+			let mut circuit = serializer.serialize_struct(stringify!(Circuit), 2)?;
+			// TODO avoid redundant box
+			circuit.serialize_field("wires", &self.wires.iter().map(|(_, (w, _))| w).collect::<Box<_>>())?;
+			circuit.serialize_field(
+				"components",
+				&self.graph.nodes().map(|(c, _, (p, d))| (c, p, d)).collect::<Box<_>>(),
+				)?;
+			circuit.end()
+		}
 }
 
 impl<'a, C> Deserialize<'a> for Circuit<C>
 where
-	C: CircuitComponent + Deserialize<'a>,
+C: CircuitComponent + Deserialize<'a>,
 {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: Deserializer<'a>,
-	{
-		#[derive(Deserialize)]
-		#[serde(field_identifier, rename_all = "lowercase")]
-		enum Field { Wires, Components }
+		where
+			D: Deserializer<'a>,
+		{
+			#[derive(Deserialize)]
+			#[serde(field_identifier, rename_all = "lowercase")]
+			enum Field { Wires, Components }
 
-		struct CircuitVisitor<C>(core::marker::PhantomData<C>);
+			struct CircuitVisitor<C>(core::marker::PhantomData<C>);
 
-		impl<'a, C> de::Visitor<'a> for CircuitVisitor<C>
+			impl<'a, C> de::Visitor<'a> for CircuitVisitor<C>
 		where
 			C: CircuitComponent + Deserialize<'a>,
 		{
@@ -492,34 +520,37 @@ where
 }
 
 impl Zone {
-	const COMPONENT_FLAG: usize = 1 << (mem::size_of::<usize>() - 1);
+	const WIDTH: u16 = 64;
+	const HEIGHT: u16 = 64;
 
 	/// Get all wires and components at a given point.
 	fn intersect_point<C>(
 		&self,
 		circuit: &Circuit<C>,
 		position: Point,
-		mut wire_callback: impl FnMut(usize),
+		mut wire_callback: impl FnMut(WireHandle),
 		mut component_callback: impl FnMut(usize),
 	)
 	where
 		C: CircuitComponent,
 	{
-		for &n in self.nodes.iter() {
-			if n & Self::COMPONENT_FLAG == 0 {
-				// Wire
-				circuit.wires[n].0.intersect_point(position).then(|| wire_callback(n));
-			} else {
-				// Component
-				let n = n ^ Self::COMPONENT_FLAG;
-				todo!();
+		for n in self.nodes.iter() {
+			match n {
+				ComponentOrWire::Wire(n) => {
+					circuit.wires[n.0].0.intersect_point(position).then(|| wire_callback(*n));
+				}
+				ComponentOrWire::Component(_) => todo!(),
 			}
 		}
 	}
 
-	fn add_wire(&mut self, index: usize) {
-		assert_eq!(index & Self::COMPONENT_FLAG, 0);
-		self.nodes.push(index);
+	fn add_wire(&mut self, handle: WireHandle) {
+		self.nodes.push(ComponentOrWire::Wire(handle));
+	}
+
+	fn remove_wire(&mut self, handle: WireHandle) {
+		self.nodes
+			.remove(self.nodes.iter().position(|e| e == &ComponentOrWire::Wire(handle)).unwrap());
 	}
 
 	fn find_ports_at<'a, F, C>(&self, circuit: &'a Circuit<C>, position: Point, mut in_callback: F, mut out_callback: F)
@@ -537,7 +568,10 @@ where
 {
 	circuit: &'a Circuit<C>,
 	aabb: Aabb,
-	index: usize,
+	zone: Point,
+	zone_min_x: u16,
+	zone_max: Point,
+	zone_index: usize,
 }
 
 impl<'a, C> Iterator for WireIter<'a, C>
@@ -547,10 +581,22 @@ where
 	type Item = (&'a Wire, WireHandle, NexusHandle);
 
 	fn next(&mut self) -> Option<Self::Item> {
-		while let Some((w, h)) = self.circuit.wires.get(self.index) {
-			self.index += 1;
-			if self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to) {
-				return Some((w, WireHandle(self.index - 1), *h));
+		while self.zone.y <= self.zone_max.y {
+			let zone = &self.circuit.zones[usize::from(self.zone.y)][usize::from(self.zone.x)];
+			while let Some(h) = zone.nodes.get(self.zone_index) {
+				self.zone_index += 1;
+				if let ComponentOrWire::Wire(wh) = *h {
+					let (w, nh) = &self.circuit.wires[wh.0];
+					if self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to) {
+						return Some((w, wh, *nh));
+					}
+				}
+			}
+			self.zone_index = 0;
+			self.zone.x += 1;
+			if self.zone.x > self.zone_max.x {
+				self.zone.x = self.zone_min_x;
+				self.zone.y += 1;
 			}
 		}
 		None
