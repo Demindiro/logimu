@@ -12,7 +12,7 @@ use crate::circuit;
 use crate::simulator;
 use crate::simulator::ir::IrOp;
 use crate::simulator::GraphNodeHandle;
-use crate::circuit::{Circuit, CircuitComponent, Ic};
+use crate::circuit::{Circuit, CircuitComponent, Ic, WireHandle};
 
 use core::any::TypeId;
 use std::collections::HashMap;
@@ -46,6 +46,11 @@ pub enum SaveCircuitError {
 	Serde(ron::Error),
 }
 
+pub enum ComponentOrWire {
+	Component(GraphNodeHandle),
+	Wire(WireHandle),
+}
+
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
 	component: Option<Box<dyn ComponentPlacer>>,
@@ -54,7 +59,7 @@ pub struct App {
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
 	ic_components: HashMap<Box<str>, Ic>,
 
-	selected_component: Option<GraphNodeHandle>,
+	selected: Option<ComponentOrWire>,
 	
 	inputs: Vec<usize>,
 	outputs: Vec<usize>,
@@ -76,7 +81,7 @@ impl App {
 			circuit: Default::default(),
 			ic_components: Default::default(),
 
-			selected_component: None,
+			selected: None,
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
@@ -160,7 +165,13 @@ impl epi::App for App {
 		}
 
 		if ctx.input().key_pressed(Key::Backspace) || ctx.input().key_pressed(Key::Delete) {
-			self.selected_component.take().map(|h| self.circuit.remove_component(h));
+			match self.selected.take() {
+				Some(ComponentOrWire::Component(h)) => {
+					self.circuit.remove_component(h);
+				}
+				Some(ComponentOrWire::Wire(h)) => todo!(),
+				None => (),
+			}
 		}
 
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
@@ -240,7 +251,7 @@ impl epi::App for App {
 				}
 			}
 			let e = ui.interact(ui.max_rect(), ui.id(), Sense::drag());
-			let color = e.dragged().then(|| Color32::RED).unwrap_or(Color32::GREEN);
+			let color = e.dragged_by(PointerButton::Primary).then(|| Color32::RED).unwrap_or(Color32::GREEN);
 
 			let pos2point = |pos: Pos2| {
 				let (x, y) = ((pos.x - rect.min.x) / 16.0, (pos.y - rect.min.y) / 16.0);
@@ -267,11 +278,13 @@ impl epi::App for App {
 				if e.hover_pos().map_or(false, |p| rect.contains(p)) {
 					// Draw a box around the component
 					hover_box = Some(rect);
-					if e.clicked() {
+					if e.clicked_by(PointerButton::Secondary) {
 						// Mark the component as selected.
-						self.selected_component = Some(h);
+						self.selected = Some(ComponentOrWire::Component(h));
+					}
+					if e.clicked_by(PointerButton::Primary) {
 						// Toggle input if it is one
-						c.external_input().map(|i| e.clicked().then(|| self.inputs[i] = !self.inputs[i]));
+						c.external_input().map(|i| self.inputs[i] = !self.inputs[i]);
 					}
 				}
 				for &po in c.inputs().into_iter().chain(c.outputs()) {
@@ -296,7 +309,7 @@ impl epi::App for App {
 				if let Some(c) = self.component.take() {
 					c.draw(&paint, pos, self.component_direction, &self.inputs, &self.outputs);
 
-					if e.clicked() {
+					if e.clicked_by(PointerButton::Primary) {
 						(c.type_id() == TypeId::of::<simulator::In>()).then(|| self.inputs.push(0));
 						(c.type_id() == TypeId::of::<simulator::Out>()).then(|| self.outputs.push(0));
 						self.circuit.add_component(c, point, self.component_direction);
@@ -310,13 +323,16 @@ impl epi::App for App {
 					if let Some(start) = self.wire_start {
 						paint.line_segment([point2pos(start), pos], wire_stroke);
 
-						if e.drag_released() {
+						// FIXME egui for some reason thinks that the primary button is not
+						// pressed if the secondary was pressed and then released at the same
+						// time.
+						if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
 							self.circuit.add_wire(circuit::Wire { from: start, to: point });
 							self.wire_start = None;
 							self.needs_update = true;
 						}
 					} else {
-						if e.drag_started() {
+						if e.drag_started() && e.dragged_by(PointerButton::Primary) {
 							self.wire_start = Some(point);
 						}
 					}
@@ -324,18 +340,22 @@ impl epi::App for App {
 			}
 
 			// Draw a box around the selected component
-			if let Some(h) = self.selected_component {
-				if let Some((c, p, d)) = self.circuit.component(h) {
-					let aabb = d * c.aabb();
-					let delta = Vec2::new(8.0, 8.0);
-					let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
-					let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
-					let rect = Rect { min, max };
-					let clr = Color32::LIGHT_BLUE.linear_multiply(0.5);
-					paint.rect_stroke(rect, 8.0, Stroke::new(2.0, clr));
-				} else {
-					self.selected_component = None;
+			match self.selected {
+				Some(ComponentOrWire::Component(h))=> {
+					if let Some((c, p, d)) = self.circuit.component(h) {
+						let aabb = d * c.aabb();
+						let delta = Vec2::new(8.0, 8.0);
+						let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
+						let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
+						let rect = Rect { min, max };
+						let clr = Color32::LIGHT_BLUE.linear_multiply(0.5);
+						paint.rect_stroke(rect, 8.0, Stroke::new(2.0, clr));
+					} else {
+						self.selected = None;
+					}
 				}
+				Some(ComponentOrWire::Wire(h)) => todo!(),
+				None => (),
 			}
 
 			// Draw a box around the hovered component

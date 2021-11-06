@@ -214,6 +214,9 @@ impl_dyn! {
 	}
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct WireHandle(usize);
+
 /// A collection of interconnected wires and components.
 pub struct Circuit<C>
 where
@@ -249,7 +252,7 @@ where
 		Self::default()
 	}
 
-	pub fn add_wire(&mut self, wire: Wire) {
+	pub fn add_wire(&mut self, wire: Wire) -> WireHandle {
 		let Aabb { min, max } = wire.aabb();
 		let index = self.wires.len();
 
@@ -263,6 +266,7 @@ where
 		}, |_| todo!());
 		let nexus = nexus.unwrap_or_else(|| self.graph.new_nexus(Vec::new()));
 		self.graph.nexus_mut(nexus).unwrap().userdata.push(index);
+		let handle = WireHandle(self.wires.len());
 		self.wires.push((wire, nexus));
 
 		// Check if this wire connects with any components. If so, connect these components
@@ -278,6 +282,13 @@ where
 				self.zones[usize::from(y)][usize::from(x)].add_wire(index);
 			}
 		}
+		
+		handle
+	}
+
+	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), &'static str> {
+		todo!();
+		Ok(())
 	}
 
 	pub fn wires(&self, aabb: Aabb) -> WireIter<C> {
@@ -449,7 +460,9 @@ where
 								return Err(de::Error::duplicate_field("wires"));
 							}
 							handled_wires = true;
-							map.next_value::<Vec<Wire>>()?.into_iter().for_each(|w| s.add_wire(w));
+							for w in map.next_value::<Vec<Wire>>()?.into_iter() {
+								s.add_wire(w);
+							}
 						},
 						Field::Components => {
 							if handled_components {
