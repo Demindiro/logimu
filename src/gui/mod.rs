@@ -322,7 +322,7 @@ impl epi::App for App {
 				let intersects = hover_box.is_none() && e.hover_pos().map_or(false, |p| w.intersect_point(pos2point(p)));
 				let stroke = match intersects {
 					true => Stroke::new(3.0, Color32::YELLOW),
-					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][*self.memory.get(h.into_raw()).unwrap_or(&0) & 1]),
+					_ => Stroke::new(3.0, [Color32::DARK_GREEN, Color32::GREEN][*self.memory.get(h.index()).unwrap_or(&0) & 1]),
 				};
 				if intersects && e.clicked_by(PointerButton::Secondary) {
 					self.selected_wires.push(wh);

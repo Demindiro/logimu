@@ -303,13 +303,12 @@ where
 		}
 	}
 
-	pub fn add_component(&mut self, component: C, position: Point, direction: Direction) -> usize {
+	pub fn add_component(&mut self, component: C, position: Point, direction: Direction) -> GraphNodeHandle {
 		// Add to graph
 		let handle = self.graph.add(component, (position, direction));
-		assert_eq!(handle.into_raw() & (1 << mem::size_of_val(&handle.into_raw())), 0);
 
 		// TODO add to zones. This requires per component AABBs.
-		handle.into_raw()
+		handle
 	}
 
 	pub fn remove_component(&mut self, handle: GraphNodeHandle) -> Result<(), RemoveError> {
@@ -563,7 +562,7 @@ where
 	C: CircuitComponent,
 {
 	// TODO avoid iter, use zones
-	iter: GraphIter<'a, C, (Point, Direction), Vec<usize>>,
+	iter: GraphIter<'a, C, (Point, Direction)>,
 	circuit: &'a Circuit<C>,
 	aabb: Aabb,
 	index: usize,

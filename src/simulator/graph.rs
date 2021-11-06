@@ -1,4 +1,5 @@
 use super::*;
+use crate::arena::{Arena, Handle};
 use core::iter;
 use core::mem;
 
@@ -8,41 +9,27 @@ where
 	C: Component,
 {
 	/// All components in this graph.
-	nodes: Vec<Entry<Node<C, Uc>>>,
-	/// The next free component slot, if any.
-	free_node: Option<usize>,
+	nodes: Arena<Node<C, Uc>>,
 	/// All nexuses in this graph with a list of connected nodes.
-	nexuses: Vec<Entry<Nexus<Un>>>,
-	/// The next free nexus slot, if any.
-	free_nexus: Option<usize>,
-	outputs: Vec<usize>,
-	inputs: Vec<usize>,
+	nexuses: Arena<Nexus<Un>>,
+	outputs: Vec<Handle>,
+	inputs: Vec<Handle>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct GraphNodeHandle(usize);
-
-impl GraphNodeHandle {
-	pub fn into_raw(self) -> usize {
-		self.0
-	}
-
-	pub fn from_raw(raw: usize) -> Self {
-		Self(raw)
-	}
-}
+pub struct GraphNodeHandle(Handle);
 
 /// A nexus is a single point connecting multiple ports. It can have only one value at any time.
 ///
 /// It is equivalent to a collection of interconnected wires in a circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct NexusHandle(usize);
+pub struct NexusHandle(Handle);
 
 impl NexusHandle {
-	pub fn into_raw(self) -> usize {
-		self.0
+	pub fn index(self) -> usize {
+		self.0.index()
 	}
 }
 
@@ -56,27 +43,6 @@ impl Port {
 	pub fn node(self) -> GraphNodeHandle {
 		match self {
 			Self::Input { node, .. } | Self::Output { node, .. } => node,
-		}
-	}
-}
-
-enum Entry<T> {
-	Free { next: Option<usize> },
-	Occupied { value: T },
-}
-
-impl<T> Entry<T> {
-	fn as_occupied(&self) -> Option<&T> {
-		match self {
-			Self::Occupied { value } => Some(value),
-			_ => None,
-		}
-	}
-
-	fn as_occupied_mut(&mut self) -> Option<&mut T> {
-		match self {
-			Self::Occupied { value } => Some(value),
-			_ => None,
 		}
 	}
 }
@@ -105,12 +71,10 @@ where
 {
 	pub fn new() -> Self {
 		Self {
-			nodes: Vec::new(),
-			free_node: None,
-			nexuses: Vec::new(),
-			free_nexus: None,
-			inputs: Vec::new(),
-			outputs: Vec::new()
+			nodes: Default::default(),
+			nexuses: Default::default(),
+			inputs: Default::default(),
+			outputs: Default::default(),
 		}
 	}
 
@@ -125,18 +89,7 @@ where
 			userdata,
 		};
 
-		let i = if let Some(free_node) = self.free_node {
-			if let Some(Entry::Free { next }) = self.nodes.get(free_node) {
-				self.free_node = *next;
-				self.nodes[free_node] = Entry::Occupied { value: node };
-				free_node
-			} else {
-				unreachable!()
-			}
-		} else {
-			self.nodes.push(Entry::Occupied { value: node });
-			self.nodes.len() - 1
-		};
+		let i = self.nodes.insert(node);
 		// FIXME unreliable
 		assert!(ic != 0 || oc != 0, "impossible");
 		if ic == 0 {
@@ -149,55 +102,29 @@ where
 	}
 
 	pub fn new_nexus(&mut self, userdata: Un) -> NexusHandle {
-		let nexus = Entry::Occupied {
-			value: Nexus { inputs: Vec::new(), outputs: Vec::new(), userdata }
-		};
-		let i = if let Some(free) = self.free_nexus {
-			if let Some(Entry::Free { next }) = self.nexuses.get(free) {
-				self.free_node = *next;
-				self.nexuses[free] = nexus;
-				free
-			} else {
-				unreachable!()
-			}
-		} else {
-			self.nexuses.push(nexus);
-			self.nexuses.len() - 1
-		};
-		NexusHandle(i)
+		let nexus = Nexus { inputs: Vec::new(), outputs: Vec::new(), userdata };
+		NexusHandle(self.nexuses.insert(nexus))
 	}
 
 	pub fn get(&self, handle: GraphNodeHandle) -> Option<(&C, &Uc)> {
-		self.nodes.get(handle.0).and_then(|n| n.as_occupied()).map(|n| (&n.component, &n.userdata))
+		self.nodes.get(handle.0).map(|n| (&n.component, &n.userdata))
 	}
 
 	pub fn remove(&mut self, component: GraphNodeHandle) -> Result<(), RemoveError> {
 
 		// Remove the component itself
-		let mut node = if let Some(e) = self.nodes.get_mut(component.0) {
-			match e {
-				Entry::Occupied { .. } => {
-					let node = mem::replace(e, Entry::Free { next: self.free_node });
-					self.free_node = Some(component.0);
-					node
-				}
-				_ => return Err(RemoveError::InvalidNode),
-			}
-		} else {
-			return Err(RemoveError::InvalidNode);
-		};
-		let node = node.as_occupied_mut().unwrap();
+		let mut node = self.nodes.remove(component.0).ok_or(RemoveError::InvalidNode)?;
 
 		// Disconnect from any nexuses
 		dbg!(component);
 		for i in node.inputs.into_iter().filter_map(|i| *i) {
-			let outp = &mut self.nexuses[i.0].as_occupied_mut().unwrap().outputs;
+			let outp = &mut self.nexuses[i.0].outputs;
 			dbg!(&outp);
 			outp.remove(outp.iter().position(|e| *e == component).unwrap());
 			dbg!(&outp);
 		}
 		for o in node.outputs.into_iter().filter_map(|i| *i) {
-			let inp = &mut self.nexuses[o.0].as_occupied_mut().unwrap().inputs;
+			let inp = &mut self.nexuses[o.0].inputs;
 			inp.remove(inp.iter().position(|e| *e == component).unwrap());
 		}
 
@@ -209,14 +136,14 @@ where
 	}
 
 	pub fn connect(&mut self, port: Port, nexus: NexusHandle) -> Result<Option<NexusHandle>, ConnectError> {
-		let nod = self.nodes.get_mut(port.node().0).and_then(Entry::as_occupied_mut).ok_or(ConnectError::InvalidNode)?;
-		let nex = self.nexuses.get_mut(nexus.0).and_then(Entry::as_occupied_mut).ok_or(ConnectError::InvalidNexus)?;
+		let nod = self.nodes.get_mut(port.node().0).ok_or(ConnectError::InvalidNode)?;
+		let nex = self.nexuses.get_mut(nexus.0).ok_or(ConnectError::InvalidNexus)?;
 		match port {
 			Port::Input { port, node } => {
 				nex.outputs.push(node);
 				let e = nod.inputs.get_mut(port).ok_or(ConnectError::InvalidPort)?;
 				if let Some(e) = e {
-					let n = &mut self.nexuses[e.0].as_occupied_mut().unwrap();
+					let n = &mut self.nexuses[e.0];
 					n.outputs.remove(n.outputs.iter().position(|e| *e == node).unwrap());
 				}
 				Ok(e.replace(nexus))
@@ -225,7 +152,7 @@ where
 				nex.inputs.push(node);
 				let e = nod.outputs.get_mut(port).ok_or(ConnectError::InvalidPort)?;
 				if let Some(e) = e {
-					let n = &mut self.nexuses[e.0].as_occupied_mut().unwrap();
+					let n = &mut self.nexuses[e.0];
 					n.inputs.remove(n.inputs.iter().position(|e| *e == node).unwrap());
 				}
 				Ok(e.replace(nexus))
@@ -240,16 +167,18 @@ where
 	pub fn generate_ir(&self) -> (Vec<ir::IrOp>, usize) {
 
 		let mut ir = Vec::new();
-		let mut nexus_visited = core::iter::repeat(false).take(self.nexuses.len()).collect();
+		let mut nexus_visited = core::iter::repeat(false)
+			.take(self.nexuses.iter().map(|e| e.0.index() + 1).max().unwrap_or(0))
+			.collect();
 		let mut mem_size = 0;
 
 		for &o in self.outputs.iter() {
-			let out = self.nodes[o].as_occupied().unwrap();
+			let out = &self.nodes[o];
 			assert_eq!(out.inputs.len(), 1);
 			for nexus in out.inputs.iter().filter_map(|n| *n) {
 				self.gen(&mut ir, nexus, &mut mem_size, &mut nexus_visited);
-				let inp  = out.inputs .iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
-				let outp = out.outputs.iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
+				let inp  = out.inputs .iter().filter_map(|n| *n).map(|n| n.0.index()).collect::<Box<_>>();
+				let outp = out.outputs.iter().filter_map(|n| *n).map(|n| n.0.index()).collect::<Box<_>>();
 				mem_size += out.component.generate_ir(&inp, &outp, &mut |op| ir.push(op), mem_size);
 			}
 		}
@@ -257,28 +186,28 @@ where
 		(ir, mem_size)
 	}
 
-	pub fn nodes(&self) -> GraphIter<C, Uc, Un> {
-		GraphIter { graph: self, index: 0 }
+	pub fn nodes(&self) -> GraphIter<C, Uc> {
+		GraphIter { iter: self.nodes.iter() }
 	}
 
 	pub fn nexus_mut(&mut self, nexus: NexusHandle) -> Option<&mut Nexus<Un>> {
-		self.nexuses.get_mut(nexus.0).and_then(Entry::as_occupied_mut)
+		self.nexuses.get_mut(nexus.0)
 	}
 
 	fn gen(&self, ir: &mut Vec<ir::IrOp>, nexus: NexusHandle, mem_size: &mut usize, nexus_visited: &mut Box<[bool]>) {
-		if nexus_visited[nexus.0] {
+		if nexus_visited[nexus.0.index()] {
 			return;
 		}
-		nexus_visited[nexus.0] = true;
-		*mem_size = (*mem_size).max(nexus.0 + 1);
-		let nexus = self.nexuses[nexus.0].as_occupied().unwrap();
+		nexus_visited[nexus.0.index()] = true;
+		*mem_size = (*mem_size).max(nexus.0.index() + 1);
+		let nexus = &self.nexuses[nexus.0];
 		for node in nexus.inputs.iter() {
-			let node = self.nodes[node.0].as_occupied().unwrap();
+			let node = &self.nodes[node.0];
 			for nexus in node.inputs.iter().filter_map(|n| *n) {
 				self.gen(ir, nexus, mem_size, nexus_visited);
 			}
-			let inp  = node.inputs .iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
-			let outp = node.outputs.iter().filter_map(|n| *n).map(|n| n.0).collect::<Box<_>>();
+			let inp  = node.inputs .iter().filter_map(|n| *n).map(|n| n.0.index()).collect::<Box<_>>();
+			let outp = node.outputs.iter().filter_map(|n| *n).map(|n| n.0.index()).collect::<Box<_>>();
 			*mem_size += node.component.generate_ir(&inp, &outp, &mut |op| ir.push(op), *mem_size);
 		}
 	}
@@ -297,29 +226,21 @@ pub enum ConnectError {
 	InvalidNexus,
 }
 
-pub struct GraphIter<'a, C, Uc, Un>
+pub struct GraphIter<'a, C, Uc>
 where
 	C: Component,
 {
-	graph: &'a Graph<C, Uc, Un>,
-	index: usize,
+	iter: crate::arena::Iter<'a, Node<C, Uc>>,
 }
 
-impl<'a, C, Uc, Un> Iterator for GraphIter<'a, C, Uc, Un>
+impl<'a, C, Uc> Iterator for GraphIter<'a, C, Uc>
 where
 	C: Component,
 {
 	type Item = (&'a C, GraphNodeHandle, &'a Uc);
 
 	fn next(&mut self) -> Option<Self::Item> {
-		while let Some(node) = self.graph.nodes.get(self.index) {
-			let handle = GraphNodeHandle(self.index);
-			self.index += 1;
-			if let Some(node) = node.as_occupied() {
-				return Some((&node.component, handle, &node.userdata));
-			}
-		}
-		None
+		self.iter.next().map(|(h, n)| (&n.component, GraphNodeHandle(h), &n.userdata))
 	}
 }
 
