@@ -46,12 +46,6 @@ pub enum SaveCircuitError {
 	Serde(ron::Error),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ComponentOrWire {
-	Component(GraphNodeHandle),
-	Wire(WireHandle),
-}
-
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
 	component: Option<Box<dyn ComponentPlacer>>,
@@ -60,7 +54,7 @@ pub struct App {
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
 	ic_components: HashMap<Box<str>, Ic>,
 
-	selected: Option<ComponentOrWire>,
+	selected_components: Vec<GraphNodeHandle>,
 	selected_wires: Vec<WireHandle>,
 	
 	inputs: Vec<usize>,
@@ -83,7 +77,7 @@ impl App {
 			circuit: Default::default(),
 			ic_components: Default::default(),
 
-			selected: None,
+			selected_components: Default::default(),
 			selected_wires: Default::default(),
 
 			inputs: Vec::new(),
@@ -169,12 +163,8 @@ impl epi::App for App {
 
 		// Check if we should remove any selected components and/or wires
 		if ctx.input().key_pressed(Key::Backspace) || ctx.input().key_pressed(Key::Delete) {
-			match self.selected.take() {
-				Some(ComponentOrWire::Component(h)) => {
-					self.circuit.remove_component(h);
-				}
-				Some(ComponentOrWire::Wire(h)) => todo!(),
-				None => (),
+			for c in self.selected_components.drain(..) {
+				self.circuit.remove_component(c).unwrap();
 			}
 			for w in self.selected_wires.drain(..) {
 				self.circuit.remove_wire(w).unwrap();
@@ -283,6 +273,7 @@ impl epi::App for App {
 
 			// Clear current selected if no modifiers are pressed during select
 			if e.clicked_by(PointerButton::Secondary) && !ui.input().modifiers.shift {
+				self.selected_components.clear();
 				self.selected_wires.clear();
 			}
 
@@ -308,8 +299,12 @@ impl epi::App for App {
 					// Draw a box around the component
 					hover_box = Some(rect);
 					if e.clicked_by(PointerButton::Secondary) {
-						// Mark the component as selected.
-						self.selected = Some(ComponentOrWire::Component(h));
+						// Mark the component as selected, or unselect if already selected.
+						if let Some(i) = self.selected_components.iter().position(|e| e == &h) {
+							self.selected_components.remove(i);
+						} else {
+							self.selected_components.push(h);
+						}
 					}
 					if e.clicked_by(PointerButton::Middle) {
 						// Toggle input if it is one
@@ -373,14 +368,11 @@ impl epi::App for App {
 				}
 			}
 
-			// Draw a box around the selected component
+			// Draw boxes around the selected components
 			let stroke = Stroke::new(2.0, selected_color);
-			if let Some(ComponentOrWire::Component(h)) = self.selected {
-				if let Some((c, p, d)) = self.circuit.component(h) {
-					draw_aabb(p, d * c.aabb(), stroke);
-				} else {
-					self.selected = None;
-				}
+			for h in self.selected_components.iter() {
+				let (c, p, d) = self.circuit.component(*h).unwrap();
+				draw_aabb(p, d * c.aabb(), stroke);
 			}
 
 			// Draw a box around the hovered component
