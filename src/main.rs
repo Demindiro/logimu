@@ -1,5 +1,6 @@
 #![feature(new_uninit)]
 
+mod arena;
 mod circuit;
 mod gui;
 mod simulator;
