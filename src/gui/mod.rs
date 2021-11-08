@@ -101,13 +101,10 @@ impl App {
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
 		let _ = dbg!(s.load_from_file(f.clone().into()));
 
-		let parent = f.parent().unwrap();
-		for f in std::fs::read_dir(parent).unwrap() {
+		for f in std::fs::read_dir(".").unwrap() {
 			let f = f.unwrap().path();
 			if f.extension().and_then(|p| p.to_str()) == Some("logimu") {
-				let mut p = PathBuf::from(parent);
-				p.push(f);
-				let _ = dbg!(s.load_ic(p.into()));
+				let _ = dbg!(s.load_ic(f.into()));
 			}
 		}
 
@@ -118,6 +115,7 @@ impl App {
 
 	pub fn load_from_file(&mut self, path: Box<Path>) -> Result<(), LoadCircuitError> {
 		let f = fs::File::open(&path).map_err(LoadCircuitError::Io)?;
+		std::env::set_current_dir(path.parent().unwrap()).unwrap();
 		self.circuit = ron::de::from_reader(f).map_err(LoadCircuitError::Serde)?;
 		self.inputs.clear();
 		self.outputs.clear();
