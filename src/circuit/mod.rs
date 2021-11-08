@@ -214,10 +214,10 @@ where
     Self: simulator::Component,
 {
     /// All the inputs of this component.
-    fn inputs(&self) -> &[PointOffset];
+    fn inputs(&self) -> Box<[PointOffset]>;
 
     /// All the outputs of this component.
-    fn outputs(&self) -> &[PointOffset];
+    fn outputs(&self) -> Box<[PointOffset]>;
 
     fn external_input(&self) -> Option<usize> {
         None
@@ -238,14 +238,16 @@ impl_dyn! {
         ref output_type(output: usize) -> Option<OutputType>;
         ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 		ref properties() -> Box<[Property]>;
-		mut set_property(name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>>;
+		mut set_property(name: &str, value: SetProperty) -> Result<(), Box<dyn Error>>;
     }
 }
 
 impl_dyn! {
     CircuitComponent for Box<dyn CircuitComponent> {
-        ref inputs() -> &[PointOffset];
-        ref outputs() -> &[PointOffset];
+        ref inputs() -> Box<[PointOffset]>;
+        ref outputs() -> Box<[PointOffset]>;
+        ref external_input() -> Option<usize>;
+        ref external_output() -> Option<usize>;
         ref aabb() -> RelativeAabb;
     }
 }

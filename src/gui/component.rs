@@ -2,8 +2,17 @@ use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 use crate::impl_dyn;
 use crate::simulator::{ir::IrOp, Component, InputType, OutputType, Property, SetProperty};
 use core::any::Any;
+use core::ops::Mul;
 use std::error::Error;
 use eframe::egui::{Painter, Pos2, Vec2};
+
+impl Mul<Vec2> for Direction {
+	type Output = Vec2;
+
+	fn mul(self, rhs: Vec2) -> Self::Output {
+		self.rotate_vec2(rhs)
+	}
+}
 
 impl Direction {
     pub fn rotate_vec2(self, v: Vec2) -> Vec2 {
@@ -41,14 +50,14 @@ impl_dyn! {
         ref output_type(output: usize) -> Option<OutputType>;
         ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 		ref properties() -> Box<[Property]>;
-		mut set_property(name: &'static str, property: SetProperty) -> Result<(), Box<dyn Error>>;
+		mut set_property(name: &str, property: SetProperty) -> Result<(), Box<dyn Error>>;
     }
 }
 
 impl_dyn! {
     CircuitComponent for Box<dyn ComponentPlacer> {
-        ref inputs() -> &[PointOffset];
-        ref outputs() -> &[PointOffset];
+        ref inputs() -> Box<[PointOffset]>;
+        ref outputs() -> Box<[PointOffset]>;
         ref external_input() -> Option<usize>;
         ref external_output() -> Option<usize>;
         ref aabb() -> RelativeAabb;

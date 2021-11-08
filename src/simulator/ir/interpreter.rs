@@ -14,6 +14,8 @@ pub fn run(ops: &[IrOp], memory: &mut [usize], input: &[usize], output: &mut [us
             &IrOp::Or { a, b, out } => memory[out] = memory[a] | memory[b],
             &IrOp::Xor { a, b, out } => memory[out] = memory[a] ^ memory[b],
             &IrOp::Not { a, out } => memory[out] = !memory[a],
+            &IrOp::Andi { a, i, out } => memory[out] = memory[a] & i,
+            &IrOp::Srli { a, i, out } => memory[out] = memory[a] >> i,
             IrOp::RunIc {
                 ic,
                 offset,

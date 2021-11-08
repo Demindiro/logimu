@@ -83,22 +83,23 @@ impl Component for Ic {
 		Box::default()
 	}
 
-	fn set_property(&mut self, name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+	fn set_property(&mut self, name: &str, value: SetProperty) -> Result<(), Box<dyn Error>> {
 		Err("no properties".into())
 	}
 }
 
 impl CircuitComponent for Ic {
-    fn inputs(&self) -> &[PointOffset] {
-        &self.inputs
+    fn inputs(&self) -> Box<[PointOffset]> {
+        self.inputs.clone()
     }
 
-    fn outputs(&self) -> &[PointOffset] {
-        &self.outputs
+    fn outputs(&self) -> Box<[PointOffset]> {
+        self.outputs.clone()
     }
 
     fn aabb(&self) -> RelativeAabb {
-        let mut iter = self.inputs().iter().chain(self.outputs());
+		let (inp, outp) = (self.inputs(), self.outputs());
+        let mut iter = inp.iter().chain(outp.iter());
         let s = *iter.next().unwrap();
         let mut aabb = RelativeAabb::new(s, s);
         iter.for_each(|p| aabb = aabb.expand(*p));

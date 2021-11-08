@@ -35,6 +35,7 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
         ("or", || Box::new(OrGate::new(b(), a()))),
         ("not", || Box::new(NotGate::new(a()))),
         ("xor", || Box::new(XorGate::new(b(), a()))),
+		("splitter", || Box::new(Splitter::new(a()))),
     ]
 };
 
@@ -262,12 +263,20 @@ impl epi::App for App {
 							let mut v = *value;
 							ui.add(Slider::new(&mut v, range.clone()).text(name));
 							if v != *value {
-								changed.push((prop.name, SetProperty::Int(v)));
+								changed.push((prop.name.clone(), SetProperty::Int(v)));
 							}
 						}
 						PropertyValue::Str { value } => {
 							let mut value = value.to_string();
 							ui.add(TextEdit::singleline(&mut value).hint_text(name));
+						}
+						PropertyValue::Mask { value } => {
+							let text = mask_to_string(*value);
+							let mut mod_text = text.clone();
+							ui.add(TextEdit::singleline(&mut mod_text).hint_text(name));
+							if text != mod_text {
+								todo!()
+							}
 						}
 					}
 				}
@@ -277,7 +286,7 @@ impl epi::App for App {
 			if let Some(c) = self.component.as_mut() {
 				show_properties(&*c.properties());
 				for (name, value) in changed {
-					let _ = c.set_property(name, value).map_err(|e| show_err(e, ui));
+					let _ = c.set_property(&name, value).map_err(|e| show_err(e, ui));
 				}
 			} else {
 				// Only show common properties
@@ -302,7 +311,7 @@ impl epi::App for App {
 				for (name, value) in changed {
 					for &h in self.selected_components.iter() {
 						let c = self.circuit.component_mut(h).unwrap().0;
-						let _ = c.set_property(name, value.clone()).map_err(|e| show_err(e, ui));
+						let _ = c.set_property(&name, value.clone()).map_err(|e| show_err(e, ui));
 					}
 				}
 			}
@@ -389,7 +398,7 @@ impl epi::App for App {
                         c.external_input().map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
                     }
                 }
-                for &po in c.inputs().into_iter().chain(c.outputs()) {
+                for &po in c.inputs().into_iter().chain(c.outputs().into_iter()) {
                     (p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
                 }
             }
@@ -474,4 +483,20 @@ impl epi::App for App {
             hover_box.map(|rect| paint.rect_stroke(rect, 8.0, Stroke::new(2.0, Color32::YELLOW)));
         });
     }
+}
+
+/// Convert a mask to a human-readable string.
+fn mask_to_string(mut mask: usize) -> String {
+	let mut s = "".to_string();
+	let (mut offt, mut comma) = (0, false);
+	while mask > 0 {
+		if mask & 1 > 0 {
+			comma.then(|| s.push(','));
+			s.extend(offt.to_string().chars());
+			comma = true;
+		}
+		mask >>= 1;
+		offt += 1;
+	}
+	s
 }

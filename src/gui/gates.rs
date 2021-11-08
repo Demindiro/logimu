@@ -1,7 +1,7 @@
 use super::ComponentPlacer;
 use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 use crate::simulator;
-use crate::simulator::{AndGate, In, NotGate, OrGate, Out, XorGate};
+use crate::simulator::*;
 use core::num::NonZeroU8;
 use eframe::egui::paint::{CircleShape, Mesh, RectShape, Vertex};
 use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2, Align2, TextStyle};
@@ -14,12 +14,12 @@ const CENTER: &[PointOffset] = &[PointOffset::new(0, 0)];
 macro_rules! impl_cc {
     ($name:ident, $in:expr, $out:expr, (($min_x:literal, $min_y:literal), ($max_x:literal, $max_y:literal))) => {
         impl CircuitComponent for $name {
-            fn inputs(&self) -> &[PointOffset] {
-                $in
+            fn inputs(&self) -> Box<[PointOffset]> {
+                $in.into()
             }
 
-            fn outputs(&self) -> &[PointOffset] {
-                $out
+            fn outputs(&self) -> Box<[PointOffset]> {
+                $out.into()
             }
 
             fn aabb(&self) -> RelativeAabb {
@@ -236,12 +236,12 @@ impl ComponentPlacer for NotGate {
 }
 
 impl CircuitComponent for In {
-    fn inputs(&self) -> &[PointOffset] {
-        &[]
+    fn inputs(&self) -> Box<[PointOffset]> {
+        [].into()
     }
 
-    fn outputs(&self) -> &[PointOffset] {
-        CENTER
+    fn outputs(&self) -> Box<[PointOffset]> {
+        CENTER.into()
     }
 
     fn external_input(&self) -> Option<usize> {
@@ -287,12 +287,12 @@ impl ComponentPlacer for In {
 }
 
 impl CircuitComponent for Out {
-    fn inputs(&self) -> &[PointOffset] {
-        CENTER
+    fn inputs(&self) -> Box<[PointOffset]> {
+        CENTER.into()
     }
 
-    fn outputs(&self) -> &[PointOffset] {
-        &[]
+    fn outputs(&self) -> Box<[PointOffset]> {
+        [].into()
     }
 
     fn external_output(&self) -> Option<usize> {
@@ -334,4 +334,52 @@ impl ComponentPlacer for Out {
 			painter.text(pos, Align2::LEFT_CENTER, text, TextStyle::Monospace, Color32::WHITE);
 		}
     }
+}
+
+impl CircuitComponent for Splitter {
+	fn inputs(&self) -> Box<[PointOffset]> {
+		IN_NOT.into()
+	}
+
+	fn outputs(&self) -> Box<[PointOffset]> {
+		(0..self.output_count().try_into().unwrap()).map(|y| PointOffset::new(1, y)).collect()
+	}
+
+	fn aabb(&self) -> RelativeAabb {
+		let mut aabb = RelativeAabb::new(self.inputs()[0], self.inputs()[0]);
+		self.outputs().iter().for_each(|&o| aabb = aabb.expand(o));
+		aabb
+	}
+}
+
+#[typetag::serde]
+impl ComponentPlacer for Splitter {
+	fn name(&self) -> &str {
+		"splitter"
+	}
+
+	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], outputs: &[usize]) {
+		let stroke = Stroke::new(3.0, Color32::WHITE);
+
+		let aabb = self.aabb();
+		let (top, btm) = (PointOffset::new(0, aabb.max.y), PointOffset::new(0, aabb.min.y));
+		let (top, btm) = (dir * top, dir * btm);
+		let top = Vec2::new(f32::from(top.x) * 16.0, f32::from(top.y) * 16.0);
+		let btm = Vec2::new(f32::from(btm.x) * 16.0, f32::from(btm.y) * 16.0);
+		painter.line_segment([pos + top, pos + btm], stroke);
+
+		for o in &*self.outputs() {
+			let y = f32::from(o.y);
+			let (a, b) = (Vec2::new(0.0, y) * 16.0, Vec2::new(1.0, y) * 16.0);
+			let (a, b) = (dir * a, dir * b);
+			painter.line_segment([pos + a, pos + b], stroke);
+		}
+
+		for i in &*self.inputs() {
+			let y = f32::from(i.y);
+			let (a, b) = (Vec2::new(-1.0, y) * 16.0, Vec2::new(0.0, y) * 16.0);
+			let (a, b) = (dir * a, dir * b);
+			painter.line_segment([pos + a, pos + b], stroke);
+		}
+	}
 }
