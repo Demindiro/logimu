@@ -1,5 +1,6 @@
 use super::*;
 use crate::simulator::ir;
+use std::error::Error;
 use std::rc::Rc;
 
 #[derive(Clone)]
@@ -77,6 +78,14 @@ impl Component for Ic {
         });
         self.memory_size
     }
+
+	fn properties(&self) -> Box<[Property]> {
+		Box::default()
+	}
+
+	fn set_property(&mut self, name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+		Err("no properties".into())
+	}
 }
 
 impl CircuitComponent for Ic {

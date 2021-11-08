@@ -4,7 +4,7 @@ use crate::simulator;
 use crate::simulator::{AndGate, In, NotGate, OrGate, Out, XorGate};
 use core::num::NonZeroU8;
 use eframe::egui::paint::{CircleShape, Mesh, RectShape, Vertex};
-use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
+use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2, Align2, TextStyle};
 
 const IN: &[PointOffset] = &[PointOffset::new(-1, -1), PointOffset::new(-1, 1)];
 const IN_NOT: &[PointOffset] = &[PointOffset::new(-1, 0)];
@@ -260,19 +260,29 @@ impl ComponentPlacer for In {
     }
 
     fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], _: &[usize]) {
-        let stroke = Stroke::new(3.0, Color32::BLACK);
-        let rect = Rect::from_center_size(pos, Vec2::new(16.0, 16.0))
-            .translate(dir.rotate_vec2(Vec2::new(8.0, 0.0)));
-        let fill = inputs
-            .get(self.index)
-            .map(|i| [Color32::DARK_GREEN, Color32::GREEN][*i & 1])
-            .unwrap_or(Color32::BLUE);
-        painter.add(Shape::Rect(RectShape {
-            corner_radius: 0.0,
-            fill,
-            rect,
-            stroke,
-        }));
+		let bits = self.bits.get();
+		if bits == 1 {
+			let stroke = Stroke::new(3.0, Color32::BLACK);
+			let rect = Rect::from_center_size(pos, Vec2::new(16.0, 16.0))
+				.translate(dir.rotate_vec2(Vec2::new(8.0, 0.0)));
+			let fill = inputs
+				.get(self.index)
+				.map(|i| [Color32::DARK_GREEN, Color32::GREEN][*i & 1])
+				.unwrap_or(Color32::BLUE);
+			painter.add(Shape::Rect(RectShape {
+				corner_radius: 0.0,
+				fill,
+				rect,
+				stroke,
+			}));
+		} else {
+			let mask = 1usize.wrapping_shl(bits.into()).wrapping_sub(1);
+			let text = inputs
+				.get(self.index)
+				.map(|i| format!("{:01$b}", *i & mask, bits.into()))
+				.unwrap_or_else(|| "x".repeat(bits.into()));
+			painter.text(pos, Align2::RIGHT_CENTER, text, TextStyle::Monospace, Color32::WHITE);
+		}
     }
 }
 
@@ -301,17 +311,27 @@ impl ComponentPlacer for Out {
     }
 
     fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, _: &[usize], outputs: &[usize]) {
-        let stroke = Stroke::new(3.0, Color32::BLACK);
-        let center = pos + dir.rotate_vec2(Vec2::new(8.0, 0.0));
-        let fill = outputs
-            .get(self.index)
-            .map(|i| [Color32::DARK_GREEN, Color32::GREEN][*i & 1])
-            .unwrap_or(Color32::BLUE);
-        painter.add(Shape::Circle(CircleShape {
-            center,
-            radius: 8.0,
-            fill,
-            stroke,
-        }));
+		let bits = self.bits.get();
+		if bits == 1 {
+			let stroke = Stroke::new(3.0, Color32::BLACK);
+			let center = pos + dir.rotate_vec2(Vec2::new(8.0, 0.0));
+			let fill = outputs
+				.get(self.index)
+				.map(|i| [Color32::DARK_GREEN, Color32::GREEN][*i & 1])
+				.unwrap_or(Color32::BLUE);
+			painter.add(Shape::Circle(CircleShape {
+				center,
+				radius: 8.0,
+				fill,
+				stroke,
+			}));
+		} else {
+			let mask = 1usize.wrapping_shl(bits.into()).wrapping_sub(1);
+			let text = outputs
+				.get(self.index)
+				.map(|i| format!("{:01$b}", *i & mask, bits.into()))
+				.unwrap_or_else(|| "x".repeat(bits.into()));
+			painter.text(pos, Align2::LEFT_CENTER, text, TextStyle::Monospace, Color32::WHITE);
+		}
     }
 }

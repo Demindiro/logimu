@@ -12,7 +12,7 @@ use crate::circuit;
 use crate::circuit::{Circuit, CircuitComponent, Ic, WireHandle};
 use crate::simulator;
 use crate::simulator::ir::IrOp;
-use crate::simulator::GraphNodeHandle;
+use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
 
 use core::any::TypeId;
 use eframe::{egui, epi};
@@ -61,6 +61,8 @@ pub struct App {
     selected_components: Vec<GraphNodeHandle>,
     selected_wires: Vec<WireHandle>,
 
+	current_bit_width: u8,
+
     inputs: Vec<usize>,
     outputs: Vec<usize>,
     memory: Box<[usize]>,
@@ -83,6 +85,8 @@ impl App {
 
             selected_components: Default::default(),
             selected_wires: Default::default(),
+
+			current_bit_width: Default::default(),
 
             inputs: Vec::new(),
             outputs: Vec::new(),
@@ -213,6 +217,8 @@ impl epi::App for App {
             ui.label(format!("Inputs: {}", self.inputs.len()));
             ui.label(format!("Outputs: {}", self.outputs.len()));
 
+			ui.separator();
+
             // Built in components
             let bits = core::num::NonZeroU8::new(1).unwrap();
             if ui.button("wire").clicked() {
@@ -238,6 +244,39 @@ impl epi::App for App {
                     self.component = Some(Box::new(ic.clone()));
                 }
             }
+
+			ui.separator();
+
+			if let Some(c) = self.component.as_mut() {
+				let mut errs = Vec::new();
+				for prop in c.properties().iter() {
+					// Capitalize the name
+					let name = prop
+						.name
+						.chars()
+						.enumerate()
+						.map(|(i, c)| (i == 0).then(|| c.to_ascii_uppercase()).unwrap_or(c))
+						.collect::<String>();
+					match &prop.value {
+						PropertyValue::Int { value, range } => {
+							let mut v = *value;
+							ui.add(Slider::new(&mut v, range.clone()).text(name));
+							if v != *value {
+								if let Err(e) = c.set_property(prop.name, SetProperty::Int(v)) {
+									errs.push(e);
+								}
+							}
+						}
+						PropertyValue::Str { value } => {
+							let mut value = value.to_string();
+							ui.add(TextEdit::singleline(&mut value).hint_text(name));
+						}
+					}
+				}
+				for e in errs {
+					ui.add(Label::new(e).text_color(Color32::RED));
+				}
+			}
         });
 
         CentralPanel::default().show(ctx, |ui| {
@@ -318,7 +357,7 @@ impl epi::App for App {
                     }
                     if e.clicked_by(PointerButton::Middle) {
                         // Toggle input if it is one
-                        c.external_input().map(|i| self.inputs[i] = !self.inputs[i]);
+                        c.external_input().map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
                     }
                 }
                 for &po in c.inputs().into_iter().chain(c.outputs()) {

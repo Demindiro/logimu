@@ -2,6 +2,8 @@ use super::ir::IrOp;
 use crate::impl_dyn;
 use core::fmt;
 use core::num::NonZeroU8;
+use core::ops::RangeInclusive;
+use std::error::Error;
 use serde::de;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -28,15 +30,57 @@ pub trait Component {
         out: &mut dyn FnMut(IrOp),
         memory_size: usize,
     ) -> usize;
+
+	/// Return all properties of this component.
+	fn properties(&self) -> Box<[Property]>;
+
+	/// Set a property of this component.
+	fn set_property(&mut self, name: &'static str, property: SetProperty) -> Result<(), Box<dyn Error>>;
+}
+
+#[derive(Clone, Debug)]
+pub struct Property {
+	pub name: &'static str,
+	pub read_only: bool,
+	pub value: PropertyValue,
+}
+
+impl Property {
+	pub const fn new(name: &'static str, value: PropertyValue) -> Self {
+		Self { name, value, read_only: false }
+	}
+}
+
+#[derive(Clone, Debug)]
+pub enum PropertyValue {
+	Int { value: i64, range: RangeInclusive<i64> },
+	Str { value: Box<str> },
+}
+
+#[derive(Clone, Debug)]
+pub enum SetProperty {
+	Int(i64),
+	Str(Box<str>),
+}
+
+impl SetProperty {
+	fn as_int(&self) -> Option<i64> {
+		match self {
+			Self::Int(i) => Some(*i),
+			_ => None,
+		}
+	}
 }
 
 impl_dyn! {
     Component for Box<dyn Component> {
-        input_count() -> usize;
-        input_type(input: usize) -> Option<InputType>;
-        output_count() -> usize;
-        output_type(output: usize) -> Option<OutputType>;
-        generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+        ref input_count() -> usize;
+        ref input_type(input: usize) -> Option<InputType>;
+        ref output_count() -> usize;
+        ref output_type(output: usize) -> Option<OutputType>;
+        ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+		ref properties() -> Box<[Property]>;
+		mut set_property(name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>>;
     }
 }
 
@@ -154,6 +198,14 @@ macro_rules! gate {
                 }
                 0
             }
+
+			fn properties(&self) -> Box<[Property]> {
+				Box::default()
+			}
+
+			fn set_property(&mut self, name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+				Err("no properties".into())
+			}
         }
     };
 }
@@ -204,11 +256,19 @@ impl Component for NotGate {
         });
         0
     }
+
+	fn properties(&self) -> Box<[Property]> {
+		Box::default()
+	}
+
+	fn set_property(&mut self, name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+		Err("no properties".into())
+	}
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct In {
-    bits: NonZeroU8,
+    pub bits: NonZeroU8,
     pub index: usize,
 }
 
@@ -248,11 +308,30 @@ impl Component for In {
         });
         0
     }
+
+	fn properties(&self) -> Box<[Property]> {
+		let bits = PropertyValue::Int { value: self.bits.get().into(), range: 1..=32 };
+		Box::new([Property::new("bits", bits)])
+	}
+
+	fn set_property(&mut self, name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+		match name {
+			"bits" => {
+				let v = value.as_int().ok_or("expected integer")?;
+				(1..=32)
+					.contains(&v)
+					.then(|| self.bits = NonZeroU8::new(v.try_into().unwrap()).unwrap())
+					.ok_or("integer out of range")?;
+			}
+			_ => Err("invalid property")?,
+		}
+		Ok(())
+	}
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Out {
-    bits: NonZeroU8,
+    pub bits: NonZeroU8,
     pub index: usize,
 }
 
@@ -292,6 +371,25 @@ impl Component for Out {
         });
         0
     }
+
+	fn properties(&self) -> Box<[Property]> {
+		let bits = PropertyValue::Int { value: self.bits.get().into(), range: 1..=32 };
+		Box::new([Property::new("bits", bits)])
+	}
+
+	fn set_property(&mut self, name: &'static str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+		match name {
+			"bits" => {
+				let v = value.as_int().ok_or("expected integer")?;
+				(1..=32)
+					.contains(&v)
+					.then(|| self.bits = NonZeroU8::new(v.try_into().unwrap()).unwrap())
+					.ok_or("integer out of range")?;
+			}
+			_ => Err("invalid property")?,
+		}
+		Ok(())
+	}
 }
 
 #[cfg(test)]
