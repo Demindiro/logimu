@@ -106,6 +106,27 @@ where
 		h
 	}
 
+	pub fn merge_nexuses<F>(&mut self, keep: NexusHandle, merge: NexusHandle, merge_userdata: F) -> Result<(), MergeNexusError>
+	where
+		F: FnOnce(&mut Un, Un),
+	{
+		if merge == keep {
+			Err(MergeNexusError::SameNexus)?;
+		}
+		let mg = self.nexuses.remove(merge.0).ok_or(MergeNexusError::InvalidNexus)?;
+		let kp = self.nexuses.get_mut(keep.0).ok_or(MergeNexusError::InvalidNexus)?;
+		for i in mg.inputs {
+			let node = self.nodes.get_mut(i.0).unwrap();
+			*node.outputs.iter_mut().find(|h| **h == Some(merge)).unwrap() = Some(keep);
+		}
+		for o in mg.outputs {
+			let node = self.nodes.get_mut(o.0).unwrap();
+			*node.inputs.iter_mut().find(|h| **h == Some(merge)).unwrap() = Some(keep);
+		}
+		merge_userdata(&mut kp.userdata, mg.userdata);
+		Ok(())
+	}
+
 	pub fn get(&self, handle: GraphNodeHandle) -> Option<(&C, &Uc)> {
 		self.nodes
 			.get(handle.0)
@@ -303,6 +324,12 @@ pub enum RemoveError {
 pub enum RemoveNexusError {
 	NotConnected,
 	InvalidNexus,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum MergeNexusError {
+	InvalidNexus,
+	SameNexus,
 }
 
 #[derive(Clone, Copy, Debug)]
