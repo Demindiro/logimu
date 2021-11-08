@@ -272,17 +272,25 @@ where
 		// Add wire to existing nexus if it connects with one.
 		// Otherwise create a new nexus and add the wire to it.
 		let mut nexus = None;
-		self.intersect_point(wire.from, |i| nexus = Some(self.wires[i.0].1), |_| todo!());
-		self.intersect_point(
-			wire.to,
-			|i| {
-				nexus
-					.is_some()
-					.then(|| todo!("handle connecting two separate wires with new wire"));
-				nexus = Some(self.wires[i.0].1);
-			},
-			|_| todo!(),
-		);
+		// TODO: avoid allocating here (Rust borrowing the entirety of self sucks :( )
+		let mut intersecting_wires = Vec::new();
+		self.intersect_point(wire.from, |i| intersecting_wires.push(i), |_| todo!());
+		self.intersect_point(wire.to, |i| intersecting_wires.push(i), |_| todo!());
+
+		for i in intersecting_wires {
+			let n = self.wires[i.0].1;
+			if let Some(nexus) = nexus {
+				if nexus != n {
+					self.graph.merge_nexuses(nexus, n, |keep, merge| {
+						merge.iter().for_each(|&i| self.wires[i.0].1 = nexus);
+						keep.extend(merge);
+					}).unwrap();
+				}
+			} else {
+				nexus = Some(n);
+			}
+		}
+
 		let nexus = nexus.unwrap_or_else(|| self.graph.new_nexus(Vec::new()));
 		let handle = WireHandle(self.wires.insert((wire, nexus)));
 		self.graph.nexus_mut(nexus).unwrap().userdata.push(handle);
