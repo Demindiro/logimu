@@ -315,6 +315,8 @@ impl Component for In {
             out: outputs[0],
             index: self.index,
         });
+		let mask = (1 << self.bits.get()) - 1;
+		out(IrOp::Andi { a: outputs[0], i: mask, out: outputs[0] });
         0
     }
 
