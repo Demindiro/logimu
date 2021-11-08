@@ -281,10 +281,12 @@ where
 			let n = self.wires[i.0].1;
 			if let Some(nexus) = nexus {
 				if nexus != n {
-					self.graph.merge_nexuses(nexus, n, |keep, merge| {
-						merge.iter().for_each(|&i| self.wires[i.0].1 = nexus);
-						keep.extend(merge);
-					}).unwrap();
+					self.graph
+						.merge_nexuses(nexus, n, |keep, merge| {
+							merge.iter().for_each(|&i| self.wires[i.0].1 = nexus);
+							keep.extend(merge);
+						})
+						.unwrap();
 				}
 			} else {
 				nexus = Some(n);

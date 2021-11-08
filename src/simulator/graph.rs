@@ -106,18 +106,33 @@ where
 		h
 	}
 
-	pub fn merge_nexuses<F>(&mut self, keep: NexusHandle, merge: NexusHandle, merge_userdata: F) -> Result<(), MergeNexusError>
+	pub fn merge_nexuses<F>(
+		&mut self,
+		keep: NexusHandle,
+		merge: NexusHandle,
+		merge_userdata: F,
+	) -> Result<(), MergeNexusError>
 	where
 		F: FnOnce(&mut Un, Un),
 	{
 		if merge == keep {
 			Err(MergeNexusError::SameNexus)?;
 		}
-		let mg = self.nexuses.remove(merge.0).ok_or(MergeNexusError::InvalidNexus)?;
-		let kp = self.nexuses.get_mut(keep.0).ok_or(MergeNexusError::InvalidNexus)?;
+		let mg = self
+			.nexuses
+			.remove(merge.0)
+			.ok_or(MergeNexusError::InvalidNexus)?;
+		let kp = self
+			.nexuses
+			.get_mut(keep.0)
+			.ok_or(MergeNexusError::InvalidNexus)?;
 		for i in mg.inputs {
 			let node = self.nodes.get_mut(i.0).unwrap();
-			*node.outputs.iter_mut().find(|h| **h == Some(merge)).unwrap() = Some(keep);
+			*node
+				.outputs
+				.iter_mut()
+				.find(|h| **h == Some(merge))
+				.unwrap() = Some(keep);
 		}
 		for o in mg.outputs {
 			let node = self.nodes.get_mut(o.0).unwrap();
