@@ -393,6 +393,10 @@ where
         self.graph.get(handle).map(|(c, &(p, d))| (c, p, d))
     }
 
+    pub fn component_mut(&mut self, handle: GraphNodeHandle) -> Option<(&mut C, Point, Direction)> {
+        self.graph.get_mut(handle).map(|(c, &mut (p, d))| (c, p, d))
+    }
+
     pub fn components(&self, aabb: Aabb) -> ComponentIter<C> {
         ComponentIter {
             iter: self.graph.nodes(),

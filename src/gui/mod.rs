@@ -12,7 +12,7 @@ use crate::circuit;
 use crate::circuit::{Circuit, CircuitComponent, Ic, WireHandle};
 use crate::simulator;
 use crate::simulator::ir::IrOp;
-use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
+use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty, Property};
 
 use core::any::TypeId;
 use eframe::{egui, epi};
@@ -247,9 +247,9 @@ impl epi::App for App {
 
 			ui.separator();
 
-			if let Some(c) = self.component.as_mut() {
-				let mut errs = Vec::new();
-				for prop in c.properties().iter() {
+			let mut changed = Vec::new();
+			let mut show_properties = |props: &[Property]| {
+				for prop in props.into_iter() {
 					// Capitalize the name
 					let name = prop
 						.name
@@ -262,9 +262,7 @@ impl epi::App for App {
 							let mut v = *value;
 							ui.add(Slider::new(&mut v, range.clone()).text(name));
 							if v != *value {
-								if let Err(e) = c.set_property(prop.name, SetProperty::Int(v)) {
-									errs.push(e);
-								}
+								changed.push((prop.name, SetProperty::Int(v)));
 							}
 						}
 						PropertyValue::Str { value } => {
@@ -273,8 +271,39 @@ impl epi::App for App {
 						}
 					}
 				}
-				for e in errs {
-					ui.add(Label::new(e).text_color(Color32::RED));
+			};
+			let show_err = |e, ui: &mut Ui| ui.add(Label::new(e).text_color(Color32::RED));
+
+			if let Some(c) = self.component.as_mut() {
+				show_properties(&*c.properties());
+				for (name, value) in changed {
+					let _ = c.set_property(name, value).map_err(|e| show_err(e, ui));
+				}
+			} else {
+				// Only show common properties
+				let mut it = self.selected_components.iter();
+				let mut props: Vec<_> = it
+					.next()
+					.map(|&h| self.circuit.component(h).unwrap().0.properties())
+					.unwrap_or_default()
+					.into();
+				for &h in it {
+					let c = self.circuit.component(h).unwrap().0.properties();
+					let mut common = Vec::new();
+					for p in props {
+						c
+							.iter()
+							.find(|e| e.name == p.name)
+							.map(|_| common.push(p));
+					}
+					props = common;
+				}
+				show_properties(&*props);
+				for (name, value) in changed {
+					for &h in self.selected_components.iter() {
+						let c = self.circuit.component_mut(h).unwrap().0;
+						let _ = c.set_property(name, value.clone()).map_err(|e| show_err(e, ui));
+					}
 				}
 			}
         });
