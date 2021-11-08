@@ -1,0 +1,5 @@
+hard_tabs = true
+struct_lit_single_line = true
+enum_discrim_align_threshold = 20
+struct_variant_width = 60
+struct_lit_width = 60
