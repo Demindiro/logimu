@@ -9,7 +9,7 @@ use dialog::Dialog;
 use file::OpenDialog;
 
 use crate::circuit;
-use crate::circuit::{Circuit, CircuitComponent, Ic, WireHandle};
+use crate::circuit::{Circuit, CircuitComponent, Ic, LoadError, WireHandle};
 use crate::simulator;
 use crate::simulator::ir::IrOp;
 use crate::simulator::{GraphNodeHandle, Property, PropertyValue, SetProperty};
@@ -19,7 +19,7 @@ use eframe::{egui, epi};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
@@ -41,13 +41,13 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 };
 
 #[derive(Debug)]
-pub enum LoadCircuitError {
+pub enum SaveCircuitError {
 	Io(io::Error),
 	Serde(ron::Error),
 }
 
 #[derive(Debug)]
-pub enum SaveCircuitError {
+pub enum LoadCircuitError {
 	Io(io::Error),
 	Serde(ron::Error),
 }
@@ -58,7 +58,7 @@ pub struct App {
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
-	ic_components: HashMap<Box<str>, Ic>,
+	ic_components: HashMap<Box<Path>, Ic>,
 
 	selected_components: Vec<GraphNodeHandle>,
 	selected_wires: Vec<WireHandle>,
@@ -71,7 +71,7 @@ pub struct App {
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
 
-	file_path: String,
+	file_path: Box<Path>,
 }
 
 impl App {
@@ -95,28 +95,28 @@ impl App {
 			memory: Box::default(),
 			needs_update: false,
 
-			file_path: String::new(),
+			file_path: PathBuf::new().into(),
 		};
 		let f = std::env::args().skip(1).next();
-		let f = f.as_deref().unwrap_or("/tmp/ok.logimu");
-		let _ = dbg!(s.load_from_file(f));
-		s.file_path = f.into();
+		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
+		let _ = dbg!(s.load_from_file(f.clone().into()));
 
-		for f in std::fs::read_dir(Path::new(f).parent().unwrap()).unwrap() {
-			let f = f.unwrap();
-			let f = f.file_name();
-			let f = f.to_str().unwrap();
-			if f.ends_with(".logimu") {
-				dbg!(f);
-				let _ = dbg!(s.load_ic(&("/tmp/".to_owned() + f)));
+		let parent = f.parent().unwrap();
+		for f in std::fs::read_dir(parent).unwrap() {
+			let f = f.unwrap().path();
+			if f.extension().and_then(|p| p.to_str()) == Some("logimu") {
+				let mut p = PathBuf::from(parent);
+				p.push(f);
+				let _ = dbg!(s.load_ic(p.into()));
 			}
 		}
+
+		s.file_path = f.into();
 
 		s
 	}
 
-	pub fn load_from_file(&mut self, path: impl Into<String>) -> Result<(), LoadCircuitError> {
-		let path = path.into();
+	pub fn load_from_file(&mut self, path: Box<Path>) -> Result<(), LoadCircuitError> {
 		let f = fs::File::open(&path).map_err(LoadCircuitError::Io)?;
 		self.circuit = ron::de::from_reader(f).map_err(LoadCircuitError::Serde)?;
 		self.inputs.clear();
@@ -133,7 +133,7 @@ impl App {
 		Ok(())
 	}
 
-	pub fn save_to_file(&mut self, path: Option<&str>) -> Result<(), SaveCircuitError> {
+	pub fn save_to_file(&mut self, path: Option<&Path>) -> Result<(), SaveCircuitError> {
 		let path = path.unwrap_or(&self.file_path);
 		dbg!(path);
 		let f = fs::File::create(&path).map_err(SaveCircuitError::Io)?;
@@ -141,12 +141,8 @@ impl App {
 		Ok(())
 	}
 
-	pub fn load_ic(&mut self, path: &str) -> Result<(), LoadCircuitError> {
-		let f = fs::File::open(path).map_err(LoadCircuitError::Io)?;
-		let c: Circuit<Box<dyn ComponentPlacer>> =
-			ron::de::from_reader(f).map_err(LoadCircuitError::Serde)?;
-		self.ic_components
-			.insert(path.to_string().into(), Ic::from_circuit(c, path));
+	pub fn load_ic(&mut self, path: Box<Path>) -> Result<(), circuit::LoadError> {
+		self.ic_components.insert(path.clone(), Ic::get_ic(path)?);
 		Ok(())
 	}
 }
@@ -242,7 +238,7 @@ impl epi::App for App {
 
 			// Custom components (ICs)
 			for (name, ic) in self.ic_components.iter() {
-				if ui.button(name).clicked() {
+				if ui.button(name.display()).clicked() {
 					self.component = Some(Box::new(ic.clone()));
 				}
 			}

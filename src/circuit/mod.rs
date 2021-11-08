@@ -1,6 +1,6 @@
 mod ic;
 
-pub use ic::Ic;
+pub use ic::*;
 
 use super::simulator;
 use super::simulator::{
@@ -182,6 +182,7 @@ impl Wire {
 }
 
 /// A component with fixed input & output locations
+#[typetag::serde]
 pub trait CircuitComponent
 where
 	Self: simulator::Component,
@@ -222,6 +223,8 @@ impl_dyn! {
 		ref external_input() -> Option<usize>;
 		ref external_output() -> Option<usize>;
 		ref aabb() -> RelativeAabb;
+		ref typetag_name() -> &'static str;
+		ref typetag_deserialize() -> ();
 	}
 }
 

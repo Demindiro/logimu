@@ -13,6 +13,7 @@ const CENTER: &[PointOffset] = &[PointOffset::new(0, 0)];
 
 macro_rules! impl_cc {
 	($name:ident, $in:expr, $out:expr, (($min_x:literal, $min_y:literal), ($max_x:literal, $max_y:literal))) => {
+		#[typetag::serde]
 		impl CircuitComponent for $name {
 			fn inputs(&self) -> Box<[PointOffset]> {
 				$in.into()
@@ -36,8 +37,8 @@ impl_cc!(AndGate, IN, OUT, ((-1, -1), (1, 1)));
 
 #[typetag::serde]
 impl ComponentPlacer for AndGate {
-	fn name(&self) -> &str {
-		"and"
+	fn name(&self) -> Box<str> {
+		"and".into()
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, _: &[usize], _: &[usize]) {
@@ -64,8 +65,8 @@ impl_cc!(OrGate, IN, OUT, ((-1, -1), (1, 1)));
 
 #[typetag::serde]
 impl ComponentPlacer for OrGate {
-	fn name(&self) -> &str {
-		"or"
+	fn name(&self) -> Box<str> {
+		"or".into()
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, _: &[usize], _: &[usize]) {
@@ -125,8 +126,8 @@ impl_cc!(XorGate, IN, OUT, ((-1, -1), (1, 1)));
 
 #[typetag::serde]
 impl ComponentPlacer for XorGate {
-	fn name(&self) -> &str {
-		"xor"
+	fn name(&self) -> Box<str> {
+		"xor".into()
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, _: &[usize], _: &[usize]) {
@@ -198,8 +199,8 @@ impl_cc!(NotGate, IN_NOT, OUT, ((-1, 0), (1, 0)));
 
 #[typetag::serde]
 impl ComponentPlacer for NotGate {
-	fn name(&self) -> &str {
-		"not"
+	fn name(&self) -> Box<str> {
+		"not".into()
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, _: &[usize], _: &[usize]) {
@@ -222,6 +223,7 @@ impl ComponentPlacer for NotGate {
 	}
 }
 
+#[typetag::serde]
 impl CircuitComponent for In {
 	fn inputs(&self) -> Box<[PointOffset]> {
 		[].into()
@@ -242,8 +244,8 @@ impl CircuitComponent for In {
 
 #[typetag::serde]
 impl ComponentPlacer for In {
-	fn name(&self) -> &str {
-		"in"
+	fn name(&self) -> Box<str> {
+		"in".into()
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], _: &[usize]) {
@@ -279,6 +281,7 @@ impl ComponentPlacer for In {
 	}
 }
 
+#[typetag::serde]
 impl CircuitComponent for Out {
 	fn inputs(&self) -> Box<[PointOffset]> {
 		CENTER.into()
@@ -299,8 +302,8 @@ impl CircuitComponent for Out {
 
 #[typetag::serde]
 impl ComponentPlacer for Out {
-	fn name(&self) -> &str {
-		"out"
+	fn name(&self) -> Box<str> {
+		"out".into()
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, _: &[usize], outputs: &[usize]) {
@@ -335,6 +338,7 @@ impl ComponentPlacer for Out {
 	}
 }
 
+#[typetag::serde]
 impl CircuitComponent for Splitter {
 	fn inputs(&self) -> Box<[PointOffset]> {
 		IN_NOT.into()
@@ -353,8 +357,8 @@ impl CircuitComponent for Splitter {
 
 #[typetag::serde]
 impl ComponentPlacer for Splitter {
-	fn name(&self) -> &str {
-		"splitter"
+	fn name(&self) -> Box<str> {
+		"splitter".into()
 	}
 
 	fn draw(
@@ -377,6 +381,7 @@ impl ComponentPlacer for Splitter {
 	}
 }
 
+#[typetag::serde]
 impl CircuitComponent for Merger {
 	fn inputs(&self) -> Box<[PointOffset]> {
 		(0..self.input_count().try_into().unwrap())
@@ -395,8 +400,8 @@ impl CircuitComponent for Merger {
 
 #[typetag::serde]
 impl ComponentPlacer for Merger {
-	fn name(&self) -> &str {
-		"merger"
+	fn name(&self) -> Box<str> {
+		"merger".into()
 	}
 
 	fn draw(

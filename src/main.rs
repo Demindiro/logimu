@@ -1,4 +1,5 @@
 #![feature(new_uninit)]
+#![feature(map_try_insert)]
 
 mod arena;
 mod circuit;
@@ -8,11 +9,13 @@ mod simulator;
 #[macro_export]
 macro_rules! impl_dyn {
 	{
+		$(#[$outer:meta])*
 		$trait:ident for $ty:ty {
 			$(ref $fn:ident($($args:ident: $aty:ty),*$(,)?) -> $ret:ty;)*
 			$(mut $fn_mut:ident($($args_mut:ident: $aty_mut:ty),*$(,)?) -> $ret_mut:ty;)*
 		}
 	} => {
+		$(#[$outer])*
 		impl $trait for $ty {
 			$(
 				fn $fn(&self $(, $args: $aty)*) -> $ret {

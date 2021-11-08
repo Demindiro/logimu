@@ -1,5 +1,5 @@
 use core::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub enum IrOp {
@@ -46,7 +46,7 @@ pub enum IrOp {
 		out: usize,
 	},
 	RunIc {
-		ic: Rc<[Self]>,
+		ic: Arc<[Self]>,
 		offset: usize,
 		inputs: Box<[usize]>,
 		outputs: Box<[usize]>,
@@ -74,7 +74,7 @@ impl fmt::Debug for IrOp {
 				"{:>3?} (runic {:>3} {:>3p} {:>3?})",
 				&inputs,
 				offset,
-				Rc::as_ptr(ic),
+				Arc::as_ptr(ic),
 				&outputs
 			),
 		}

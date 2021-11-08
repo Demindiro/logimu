@@ -11,6 +11,7 @@ serde = { version = "*", features = ["derive"] }
 erased-serde = "*"
 typetag = "*"
 ron = "*"
+lazy_static = "*"
 
 [dev-dependencies]
 serde_test = "*"

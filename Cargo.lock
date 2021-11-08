@@ -830,6 +830,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "erased-serde",
+ "lazy_static",
  "ron",
  "serde",
  "serde_test",

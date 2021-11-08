@@ -30,7 +30,7 @@ pub trait ComponentPlacer
 where
 	Self: CircuitComponent + Any,
 {
-	fn name(&self) -> &str;
+	fn name(&self) -> Box<str>;
 
 	fn draw(
 		&self,
@@ -55,6 +55,7 @@ impl_dyn! {
 }
 
 impl_dyn! {
+	#[typetag::serde]
 	CircuitComponent for Box<dyn ComponentPlacer> {
 		ref inputs() -> Box<[PointOffset]>;
 		ref outputs() -> Box<[PointOffset]>;
