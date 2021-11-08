@@ -35,6 +35,11 @@ pub enum IrOp {
         i: usize,
         out: usize,
     },
+	Slli {
+		a: usize,
+		i: u8,
+		out: usize,
+	},
 	Srli {
 		a: usize,
 		i: u8,
@@ -62,6 +67,7 @@ impl fmt::Debug for IrOp {
             IrOp::Xor { a, b, out } => fmt2(f, "xor", a, b, out),
             IrOp::Not { a, out } => fmt1(f, "not", a, out),
     		IrOp::Andi { a, i, out } => fmt2(f, "andi", a, i, out),
+    		IrOp::Slli { a, i, out } => fmt2(f, "slli", a, &(*i).into(), out),
     		IrOp::Srli { a, i, out } => fmt2(f, "srli", a, &(*i).into(), out),
             IrOp::RunIc {
                 ic,

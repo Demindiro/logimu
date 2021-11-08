@@ -346,9 +346,7 @@ impl CircuitComponent for Splitter {
 	}
 
 	fn aabb(&self) -> RelativeAabb {
-		let mut aabb = RelativeAabb::new(self.inputs()[0], self.inputs()[0]);
-		self.outputs().iter().for_each(|&o| aabb = aabb.expand(o));
-		aabb
+		aabb_merger_splitter(&*self.inputs(), &*self.outputs())
 	}
 }
 
@@ -359,27 +357,57 @@ impl ComponentPlacer for Splitter {
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], outputs: &[usize]) {
+		draw_merger_splitter(painter, pos, dir, inputs, outputs, &*self.inputs(), &*self.outputs())
+	}
+}
+
+impl CircuitComponent for Merger {
+	fn inputs(&self) -> Box<[PointOffset]> {
+		(0..self.input_count().try_into().unwrap()).map(|y| PointOffset::new(-1, y)).collect()
+	}
+
+	fn outputs(&self) -> Box<[PointOffset]> {
+		OUT.into()
+	}
+
+	fn aabb(&self) -> RelativeAabb {
+		aabb_merger_splitter(&*self.inputs(), &*self.outputs())
+	}
+}
+
+#[typetag::serde]
+impl ComponentPlacer for Merger {
+	fn name(&self) -> &str {
+		"merger"
+	}
+
+	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], outputs: &[usize]) {
+		draw_merger_splitter(painter, pos, dir, inputs, outputs, &*self.inputs(), &*self.outputs())
+	}
+}
+
+fn aabb_merger_splitter(inputs: &[PointOffset], outputs: &[PointOffset]) -> RelativeAabb {
+	let mut aabb = RelativeAabb::new(inputs[0], outputs[0]);
+	inputs.iter().for_each(|&o| aabb = aabb.expand(o));
+	outputs.iter().for_each(|&o| aabb = aabb.expand(o));
+	aabb
+}
+
+fn draw_merger_splitter(painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], outputs: &[usize], in_pos: &[PointOffset], out_pos: &[PointOffset]) {
 		let stroke = Stroke::new(3.0, Color32::WHITE);
 
-		let aabb = self.aabb();
+		let aabb = aabb_merger_splitter(in_pos, out_pos);
+
 		let (top, btm) = (PointOffset::new(0, aabb.max.y), PointOffset::new(0, aabb.min.y));
 		let (top, btm) = (dir * top, dir * btm);
 		let top = Vec2::new(f32::from(top.x) * 16.0, f32::from(top.y) * 16.0);
 		let btm = Vec2::new(f32::from(btm.x) * 16.0, f32::from(btm.y) * 16.0);
 		painter.line_segment([pos + top, pos + btm], stroke);
 
-		for o in &*self.outputs() {
-			let y = f32::from(o.y);
-			let (a, b) = (Vec2::new(0.0, y) * 16.0, Vec2::new(1.0, y) * 16.0);
+		for (dx, p) in out_pos.iter().map(|p| (0.0, p)).chain(in_pos.iter().map(|p| (1.0, p))) {
+			let y = f32::from(p.y);
+			let (a, b) = (Vec2::new(0.0 - dx, y) * 16.0, Vec2::new(1.0 - dx, y) * 16.0);
 			let (a, b) = (dir * a, dir * b);
 			painter.line_segment([pos + a, pos + b], stroke);
 		}
-
-		for i in &*self.inputs() {
-			let y = f32::from(i.y);
-			let (a, b) = (Vec2::new(-1.0, y) * 16.0, Vec2::new(0.0, y) * 16.0);
-			let (a, b) = (dir * a, dir * b);
-			painter.line_segment([pos + a, pos + b], stroke);
-		}
-	}
 }
