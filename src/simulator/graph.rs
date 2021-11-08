@@ -116,6 +116,12 @@ where
             .map(|n| (&n.component, &n.userdata))
     }
 
+    pub fn get_mut(&mut self, handle: GraphNodeHandle) -> Option<(&mut C, &mut Uc)> {
+        self.nodes
+            .get_mut(handle.0)
+            .map(|n| (&mut n.component, &mut n.userdata))
+    }
+
     pub fn remove(&mut self, component: GraphNodeHandle) -> Result<(), RemoveError> {
         // Remove the component itself
         let node = self

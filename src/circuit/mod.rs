@@ -5,7 +5,7 @@ pub use ic::Ic;
 use super::simulator;
 use super::simulator::{
     ir::IrOp, Component, Graph, GraphIter, GraphNodeHandle, InputType, NexusHandle, OutputType,
-    Port, RemoveError,
+    Port, RemoveError, Property, SetProperty,
 };
 use crate::arena::{Arena, Handle};
 use crate::impl_dyn;
@@ -13,6 +13,7 @@ use crate::impl_dyn;
 use core::fmt;
 use core::mem;
 use core::ops::{Add, Mul};
+use std::error::Error;
 use serde::de;
 use serde::ser::{SerializeSeq, SerializeStruct, SerializeTuple};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -213,10 +214,10 @@ where
     Self: simulator::Component,
 {
     /// All the inputs of this component.
-    fn inputs(&self) -> &[PointOffset];
+    fn inputs(&self) -> Box<[PointOffset]>;
 
     /// All the outputs of this component.
-    fn outputs(&self) -> &[PointOffset];
+    fn outputs(&self) -> Box<[PointOffset]>;
 
     fn external_input(&self) -> Option<usize> {
         None
@@ -230,20 +231,24 @@ where
 }
 
 impl_dyn! {
-    Component for &dyn CircuitComponent {
-        input_count() -> usize;
-        input_type(input: usize) -> Option<InputType>;
-        output_count() -> usize;
-        output_type(output: usize) -> Option<OutputType>;
-        generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+    Component for Box<dyn CircuitComponent> {
+        ref input_count() -> usize;
+        ref input_type(input: usize) -> Option<InputType>;
+        ref output_count() -> usize;
+        ref output_type(output: usize) -> Option<OutputType>;
+        ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+		ref properties() -> Box<[Property]>;
+		mut set_property(name: &str, value: SetProperty) -> Result<(), Box<dyn Error>>;
     }
 }
 
 impl_dyn! {
-    CircuitComponent for &dyn CircuitComponent {
-        inputs() -> &[PointOffset];
-        outputs() -> &[PointOffset];
-        aabb() -> RelativeAabb;
+    CircuitComponent for Box<dyn CircuitComponent> {
+        ref inputs() -> Box<[PointOffset]>;
+        ref outputs() -> Box<[PointOffset]>;
+        ref external_input() -> Option<usize>;
+        ref external_output() -> Option<usize>;
+        ref aabb() -> RelativeAabb;
     }
 }
 
@@ -388,6 +393,10 @@ where
 
     pub fn component(&self, handle: GraphNodeHandle) -> Option<(&C, Point, Direction)> {
         self.graph.get(handle).map(|(c, &(p, d))| (c, p, d))
+    }
+
+    pub fn component_mut(&mut self, handle: GraphNodeHandle) -> Option<(&mut C, Point, Direction)> {
+        self.graph.get_mut(handle).map(|(c, &mut (p, d))| (c, p, d))
     }
 
     pub fn components(&self, aabb: Aabb) -> ComponentIter<C> {

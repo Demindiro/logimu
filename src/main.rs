@@ -9,13 +9,19 @@ mod simulator;
 macro_rules! impl_dyn {
 	{
 		$trait:ident for $ty:ty {
-			$($fn:ident($($args:ident: $aty:ty),*$(,)?) -> $ret:ty;)*
+			$(ref $fn:ident($($args:ident: $aty:ty),*$(,)?) -> $ret:ty;)*
+			$(mut $fn_mut:ident($($args_mut:ident: $aty_mut:ty),*$(,)?) -> $ret_mut:ty;)*
 		}
 	} => {
 		impl $trait for $ty {
 			$(
-				fn $fn(&self, $($args: $aty,)*) -> $ret {
+				fn $fn(&self $(, $args: $aty)*) -> $ret {
 					(**self).$fn($($args,)*)
+				}
+			)*
+			$(
+				fn $fn_mut(&mut self $(, $args_mut: $aty_mut)*) -> $ret_mut {
+					(**self).$fn_mut($($args_mut,)*)
 				}
 			)*
 		}

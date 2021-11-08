@@ -12,7 +12,7 @@ use crate::circuit;
 use crate::circuit::{Circuit, CircuitComponent, Ic, WireHandle};
 use crate::simulator;
 use crate::simulator::ir::IrOp;
-use crate::simulator::GraphNodeHandle;
+use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty, Property};
 
 use core::any::TypeId;
 use eframe::{egui, epi};
@@ -35,6 +35,8 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
         ("or", || Box::new(OrGate::new(b(), a()))),
         ("not", || Box::new(NotGate::new(a()))),
         ("xor", || Box::new(XorGate::new(b(), a()))),
+		("splitter", || Box::new(Splitter::new(a()))),
+		("merger", || Box::new(Merger::new(a()))),
     ]
 };
 
@@ -61,6 +63,8 @@ pub struct App {
     selected_components: Vec<GraphNodeHandle>,
     selected_wires: Vec<WireHandle>,
 
+	current_bit_width: u8,
+
     inputs: Vec<usize>,
     outputs: Vec<usize>,
     memory: Box<[usize]>,
@@ -83,6 +87,8 @@ impl App {
 
             selected_components: Default::default(),
             selected_wires: Default::default(),
+
+			current_bit_width: Default::default(),
 
             inputs: Vec::new(),
             outputs: Vec::new(),
@@ -213,6 +219,8 @@ impl epi::App for App {
             ui.label(format!("Inputs: {}", self.inputs.len()));
             ui.label(format!("Outputs: {}", self.outputs.len()));
 
+			ui.separator();
+
             // Built in components
             let bits = core::num::NonZeroU8::new(1).unwrap();
             if ui.button("wire").clicked() {
@@ -238,6 +246,76 @@ impl epi::App for App {
                     self.component = Some(Box::new(ic.clone()));
                 }
             }
+
+			ui.separator();
+
+			let mut changed = Vec::new();
+			let mut show_properties = |props: &[Property]| {
+				for prop in props.into_iter() {
+					// Capitalize the name
+					let name = prop
+						.name
+						.chars()
+						.enumerate()
+						.map(|(i, c)| (i == 0).then(|| c.to_ascii_uppercase()).unwrap_or(c))
+						.collect::<String>();
+					match &prop.value {
+						PropertyValue::Int { value, range } => {
+							let mut v = *value;
+							ui.add(Slider::new(&mut v, range.clone()).text(name));
+							if v != *value {
+								changed.push((prop.name.clone(), SetProperty::Int(v)));
+							}
+						}
+						PropertyValue::Str { value } => {
+							let mut value = value.to_string();
+							ui.add(TextEdit::singleline(&mut value).hint_text(name));
+						}
+						PropertyValue::Mask { value } => {
+							let text = mask_to_string(*value);
+							let mut mod_text = text.clone();
+							ui.add(TextEdit::singleline(&mut mod_text).hint_text(name));
+							if text != mod_text {
+								todo!()
+							}
+						}
+					}
+				}
+			};
+			let show_err = |e, ui: &mut Ui| ui.add(Label::new(e).text_color(Color32::RED));
+
+			if let Some(c) = self.component.as_mut() {
+				show_properties(&*c.properties());
+				for (name, value) in changed {
+					let _ = c.set_property(&name, value).map_err(|e| show_err(e, ui));
+				}
+			} else {
+				// Only show common properties
+				let mut it = self.selected_components.iter();
+				let mut props: Vec<_> = it
+					.next()
+					.map(|&h| self.circuit.component(h).unwrap().0.properties())
+					.unwrap_or_default()
+					.into();
+				for &h in it {
+					let c = self.circuit.component(h).unwrap().0.properties();
+					let mut common = Vec::new();
+					for p in props {
+						c
+							.iter()
+							.find(|e| e.name == p.name)
+							.map(|_| common.push(p));
+					}
+					props = common;
+				}
+				show_properties(&*props);
+				for (name, value) in changed {
+					for &h in self.selected_components.iter() {
+						let c = self.circuit.component_mut(h).unwrap().0;
+						let _ = c.set_property(&name, value.clone()).map_err(|e| show_err(e, ui));
+					}
+				}
+			}
         });
 
         CentralPanel::default().show(ctx, |ui| {
@@ -318,10 +396,10 @@ impl epi::App for App {
                     }
                     if e.clicked_by(PointerButton::Middle) {
                         // Toggle input if it is one
-                        c.external_input().map(|i| self.inputs[i] = !self.inputs[i]);
+                        c.external_input().map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
                     }
                 }
-                for &po in c.inputs().into_iter().chain(c.outputs()) {
+                for &po in c.inputs().into_iter().chain(c.outputs().into_iter()) {
                     (p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
                 }
             }
@@ -406,4 +484,20 @@ impl epi::App for App {
             hover_box.map(|rect| paint.rect_stroke(rect, 8.0, Stroke::new(2.0, Color32::YELLOW)));
         });
     }
+}
+
+/// Convert a mask to a human-readable string.
+fn mask_to_string(mut mask: usize) -> String {
+	let mut s = "".to_string();
+	let (mut offt, mut comma) = (0, false);
+	while mask > 0 {
+		if mask & 1 > 0 {
+			comma.then(|| s.push(','));
+			s.extend(offt.to_string().chars());
+			comma = true;
+		}
+		mask >>= 1;
+		offt += 1;
+	}
+	s
 }
