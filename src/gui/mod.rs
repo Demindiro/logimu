@@ -70,6 +70,7 @@ pub struct App {
 	memory: Box<[usize]>,
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
+	property_value_buffer: Option<(Box<str>, String)>,
 
 	file_path: Box<Path>,
 }
@@ -94,6 +95,7 @@ impl App {
 			outputs: Vec::new(),
 			memory: Box::default(),
 			needs_update: false,
+			property_value_buffer: Default::default(),
 
 			file_path: PathBuf::new().into(),
 		};
@@ -168,7 +170,10 @@ impl epi::App for App {
 		}
 
 		// Check if we should remove any selected components and/or wires
-		if ctx.input().key_pressed(Key::Backspace) || ctx.input().key_pressed(Key::Delete) {
+		let del = [Key::Backspace, Key::Delete]
+			.iter()
+			.any(|e| ctx.input().key_pressed(*e));
+		if del && ctx.memory().focus().is_none() {
 			for c in self.selected_components.drain(..) {
 				self.circuit.remove_component(c).unwrap();
 			}
@@ -244,8 +249,10 @@ impl epi::App for App {
 			ui.separator();
 
 			let mut changed = Vec::new();
-			let mut show_properties = |props: &[Property]| {
-				for prop in props.into_iter() {
+			let mut show_properties = |props: Vec<Property>| {
+				let mut errors = Vec::new();
+				let mut prop_buf = self.property_value_buffer.take();
+				for prop in props {
 					// Capitalize the name
 					let name = prop
 						.name
@@ -253,11 +260,11 @@ impl epi::App for App {
 						.enumerate()
 						.map(|(i, c)| (i == 0).then(|| c.to_ascii_uppercase()).unwrap_or(c))
 						.collect::<String>();
-					match &prop.value {
+					match prop.value {
 						PropertyValue::Int { value, range } => {
-							let mut v = *value;
+							let mut v = value;
 							ui.add(Slider::new(&mut v, range.clone()).text(name));
-							if v != *value {
+							if v != value {
 								changed.push((prop.name.clone(), SetProperty::Int(v)));
 							}
 						}
@@ -266,20 +273,35 @@ impl epi::App for App {
 							ui.add(TextEdit::singleline(&mut value).hint_text(name));
 						}
 						PropertyValue::Mask { value } => {
-							let text = mask_to_string(*value);
-							let mut mod_text = text.clone();
-							ui.add(TextEdit::singleline(&mut mod_text).hint_text(name));
-							if text != mod_text {
-								todo!()
+							let (mut text, modify) = match prop_buf.take() {
+								Some((name, buf)) if name == prop.name => (buf, true),
+								pb => {
+									prop_buf = pb;
+									(mask_to_string(value), false)
+								}
+							};
+							let te = TextEdit::singleline(&mut text).hint_text(name);
+							if ui.add(te).has_focus() {
+								self.property_value_buffer = Some((prop.name, text));
+							} else if modify {
+								match string_to_mask(&text) {
+									Ok(mask) => changed.push((prop.name, SetProperty::Mask(mask))),
+									Err(e) => errors.push(e),
+								}
 							}
 						}
 					}
 				}
+				errors
 			};
-			let show_err = |e, ui: &mut Ui| ui.add(Label::new(e).text_color(Color32::RED));
+			let show_err = |e, ui: &mut Ui| {
+				ui.add(Label::new(dbg!(e)).text_color(Color32::RED));
+			};
 
 			if let Some(c) = self.component.as_mut() {
-				show_properties(&*c.properties());
+				show_properties(c.properties().into())
+					.into_iter()
+					.for_each(|e| show_err(e.into(), ui));
 				for (name, value) in changed {
 					let _ = c.set_property(&name, value).map_err(|e| show_err(e, ui));
 				}
@@ -299,7 +321,9 @@ impl epi::App for App {
 					}
 					props = common;
 				}
-				show_properties(&*props);
+				show_properties(props.into())
+					.into_iter()
+					.for_each(|e| show_err(e.into(), ui));
 				for (name, value) in changed {
 					for &h in self.selected_components.iter() {
 						let c = self.circuit.component_mut(h).unwrap().0;
@@ -483,10 +507,37 @@ fn mask_to_string(mut mask: usize) -> String {
 		if mask & 1 > 0 {
 			comma.then(|| s.push(','));
 			s.extend(offt.to_string().chars());
+			let o = offt;
+			while mask & 2 > 0 {
+				mask >>= 1;
+				offt += 1;
+			}
+			if offt != o {
+				s.push('-');
+				s.extend(offt.to_string().chars());
+			}
 			comma = true;
 		}
 		mask >>= 1;
 		offt += 1;
 	}
 	s
+}
+
+/// Convert a human-readable mask string to an actual mask.
+fn string_to_mask(mut s: &str) -> Result<usize, String> {
+	let mut mask = 0;
+	for r in s.split(',').map(str::trim) {
+		if let Some((min, max)) = r.split_once('-') {
+			let (min, max) = (min.trim_end(), max.trim_start());
+			let min = min.parse::<u8>().map_err(|e| e.to_string())?;
+			let max = max.parse::<u8>().map_err(|e| e.to_string())?;
+			for i in min..=max {
+				mask |= 1 << i;
+			}
+		} else {
+			mask |= 1 << r.parse::<u8>().map_err(|e| e.to_string())?;
+		}
+	}
+	Ok(mask)
 }

@@ -491,6 +491,13 @@ impl Component for Splitter {
 					},
 				);
 			}
+			name if name.starts_with("output ") => {
+				let (_, n) = name.split_once(' ').ok_or("invalid property")?;
+				let n = n.parse::<usize>().map_err(|_| "invalid property")?;
+				let m = self.outputs.get_mut(n).ok_or("invalid property")?;
+				let v = value.as_mask().ok_or("expected mask")?;
+				*m = v.try_into().map_err(|_| "mask cannot be empty")?;
+			}
 			_ => Err("invalid property")?,
 		}
 		Ok(())
