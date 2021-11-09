@@ -20,11 +20,15 @@ pub fn run(ops: &[IrOp], memory: &mut [usize], input: &[usize], output: &mut [us
 			IrOp::RunIc { ic, offset, inputs, outputs } => {
 				let mut inp = [0; 256];
 				let mut outp = [0; 256];
-				for (i, v) in inputs.into_iter().enumerate() {
+				for (i, v) in inputs.iter().enumerate().filter(|(_, v)| **v != usize::MAX) {
 					inp[i] = memory[*v];
 				}
 				run(&ic, &mut memory[*offset..], &inp, &mut outp);
-				for (i, v) in outputs.into_iter().enumerate() {
+				for (i, v) in outputs
+					.iter()
+					.enumerate()
+					.filter(|(_, v)| **v != usize::MAX)
+				{
 					memory[*v] = outp[i];
 				}
 			}

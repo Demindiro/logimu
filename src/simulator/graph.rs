@@ -266,14 +266,12 @@ where
 				let inp = out
 					.inputs
 					.iter()
-					.filter_map(|n| *n)
-					.map(|n| n.0.index())
+					.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
 					.collect::<Box<_>>();
 				let outp = out
 					.outputs
 					.iter()
-					.filter_map(|n| *n)
-					.map(|n| n.0.index())
+					.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
 					.collect::<Box<_>>();
 				mem_size += out
 					.component
@@ -313,14 +311,12 @@ where
 			let inp = node
 				.inputs
 				.iter()
-				.filter_map(|n| *n)
-				.map(|n| n.0.index())
+				.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
 				.collect::<Box<_>>();
 			let outp = node
 				.outputs
 				.iter()
-				.filter_map(|n| *n)
-				.map(|n| n.0.index())
+				.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
 				.collect::<Box<_>>();
 			*mem_size += node
 				.component

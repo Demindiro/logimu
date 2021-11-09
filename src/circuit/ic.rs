@@ -54,6 +54,8 @@ impl Inner {
 			output_map.push(o);
 		}
 
+		dbg!(&outputs, &output_map);
+
 		let (ir, memory_size) = circuit.generate_ir();
 
 		Self {
