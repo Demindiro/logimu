@@ -163,7 +163,7 @@ macro_rules! gate {
 		#[derive(Serialize, Deserialize)]
 		pub struct $name {
 			/// The amount of inputs this gate has. Must be at least 2.
-			inputs: NonZeroOneU8,
+			pub inputs: NonZeroOneU8,
 			/// The size of each input and the output.
 			bits: NonZeroU8,
 		}
@@ -198,14 +198,19 @@ macro_rules! gate {
 				out: &mut dyn FnMut(IrOp),
 				_: usize,
 			) -> usize {
-				for i in inputs.iter().skip(1) {
-					out(IrOp::$op { a: inputs[0], b: *i, out: outputs[0] })
+				assert!(outputs.len() < 2);
+				if let Some(&output) = outputs.first() {
+					let mut it = inputs.iter().filter(|a| **a != usize::MAX);
+					it.next()
+						.map(|&a| out(IrOp::Andi { a, i: usize::MAX, out: output }));
+					it.for_each(|&a| out(IrOp::$op { a, b: output, out: output }));
 				}
 				0
 			}
 
 			fn properties(&self) -> Box<[Property]> {
-				Box::default()
+				let inputs = PropertyValue::Int { value: self.inputs.get().into(), range: 2..=31 };
+				[Property { name: "inputs".into(), read_only: false, value: inputs }].into()
 			}
 
 			fn set_property(
@@ -213,7 +218,15 @@ macro_rules! gate {
 				name: &str,
 				value: SetProperty,
 			) -> Result<(), Box<dyn Error>> {
-				Err("no properties".into())
+				match name {
+					"inputs" => {
+						let v = value.as_int().ok_or("expected integer")?;
+						let v = v.try_into().map_err(|_| "integer out of range")?;
+						self.inputs = NonZeroOneU8::new(v).ok_or("integer out of range")?;
+					}
+					_ => Err("invalid property")?,
+				}
+				Ok(())
 			}
 		}
 	};

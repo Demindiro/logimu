@@ -16,7 +16,12 @@ macro_rules! impl_cc {
 		#[typetag::serde]
 		impl CircuitComponent for $name {
 			fn inputs(&self) -> Box<[PointOffset]> {
-				$in.into()
+				let i = i16::from(self.inputs.get());
+				(-i / 2..0)
+					.chain((i % 2 != 0).then(|| 0))
+					.chain(1..=i / 2)
+					.map(|y| PointOffset::new(-1, y.try_into().unwrap()))
+					.collect()
 			}
 
 			fn outputs(&self) -> Box<[PointOffset]> {
@@ -195,7 +200,20 @@ impl ComponentPlacer for XorGate {
 	}
 }
 
-impl_cc!(NotGate, IN_NOT, OUT, ((-1, 0), (1, 0)));
+#[typetag::serde]
+impl CircuitComponent for NotGate {
+	fn inputs(&self) -> Box<[PointOffset]> {
+		IN_NOT.into()
+	}
+
+	fn outputs(&self) -> Box<[PointOffset]> {
+		OUT.into()
+	}
+
+	fn aabb(&self) -> RelativeAabb {
+		RelativeAabb::new(PointOffset::new(-1, 0), PointOffset::new(1, 0))
+	}
+}
 
 #[typetag::serde]
 impl ComponentPlacer for NotGate {
