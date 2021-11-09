@@ -1,3 +1,4 @@
+#![feature(binary_heap_into_iter_sorted)]
 #![feature(new_uninit)]
 #![feature(map_try_insert)]
 

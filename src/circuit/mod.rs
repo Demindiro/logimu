@@ -10,6 +10,7 @@ use super::simulator::{
 use crate::arena::{Arena, Handle};
 use crate::impl_dyn;
 
+use core::cmp::Ordering;
 use core::fmt;
 use core::mem;
 use core::ops::{Add, Mul};
@@ -18,7 +19,7 @@ use serde::ser::{SerializeSeq, SerializeStruct, SerializeTuple};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, Serialize, Deserialize)]
 pub struct Point {
 	pub x: u16,
 	pub y: u16,
@@ -30,6 +31,16 @@ impl Point {
 
 	pub const fn new(x: u16, y: u16) -> Self {
 		Self { x, y }
+	}
+}
+
+impl PartialOrd for Point {
+	/// The `y` coordinate has precedence over the `x` coordinate.
+	fn partial_cmp(&self, rhs: &Self) -> Option<Ordering> {
+		Some(match self.y.cmp(&rhs.y) {
+			Ordering::Equal => self.x.cmp(&rhs.x),
+			o => o,
+		})
 	}
 }
 

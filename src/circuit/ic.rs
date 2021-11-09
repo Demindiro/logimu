@@ -1,5 +1,6 @@
 use super::*;
 use crate::simulator::ir;
+use core::cmp::Ordering;
 use serde::de::{Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap};
@@ -36,25 +37,38 @@ impl Inner {
 	{
 		let (mut inp, mut outp) = (BinaryHeap::default(), BinaryHeap::default());
 
+		#[derive(Eq, Ord)]
+		struct E(Point, usize);
+
+		impl PartialEq for E {
+			fn eq(&self, rhs: &Self) -> bool {
+				self.0 == rhs.0
+			}
+		}
+
+		impl PartialOrd for E {
+			fn partial_cmp(&self, rhs: &Self) -> Option<Ordering> {
+				Some(self.0.cmp(&rhs.0).reverse())
+			}
+		}
+
 		for (c, p, ..) in circuit.components(Aabb::ALL) {
-			c.external_input().map(|i| inp.push((p, i)));
-			c.external_output().map(|o| outp.push((p, o)));
+			c.external_input().map(|i| inp.push(E(p, i)));
+			c.external_output().map(|o| outp.push(E(p, o)));
 		}
 
 		let mut inputs = Vec::new();
 		let mut outputs = Vec::new();
 		let mut input_map = Vec::new();
 		let mut output_map = Vec::new();
-		for (x, (_, i)) in inp.into_iter().enumerate() {
+		for (x, E(_p, i)) in inp.into_iter_sorted().enumerate() {
 			inputs.push(PointOffset::new(-(x as i8 + 1), 0));
 			input_map.push(i);
 		}
-		for (x, (_, o)) in outp.into_iter().enumerate() {
+		for (x, E(_, o)) in outp.into_iter_sorted().enumerate() {
 			outputs.push(PointOffset::new(-(x as i8 + 1), 2));
 			output_map.push(o);
 		}
-
-		dbg!(&outputs, &output_map);
 
 		let (ir, memory_size) = circuit.generate_ir();
 
@@ -179,8 +193,8 @@ impl Component for Ic {
 		out(ir::IrOp::RunIc {
 			ic: self.0.ir.clone().into(),
 			offset: memory_size,
-			inputs: inputs.into(),
-			outputs: outputs.into(),
+			inputs: inp.into(),
+			outputs: outp.into(),
 		});
 		self.0.memory_size
 	}
