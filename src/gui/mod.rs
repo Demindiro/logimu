@@ -212,7 +212,7 @@ impl epi::App for App {
 			r.map(|r| r.inner.map(|r| r.then(|| self.dialog = None)));
 		}
 
-		egui::SidePanel::left("side_panel").show(ctx, |ui| {
+		let show_components = |ui: &mut Ui| {
 			ui.heading("Components");
 
 			ui.label(format!("Inputs: {}", self.inputs.len()));
@@ -333,6 +333,9 @@ impl epi::App for App {
 					}
 				}
 			}
+		};
+		egui::SidePanel::left("components").show(ctx, |ui| {
+			egui::ScrollArea::vertical().show(ui, show_components)
 		});
 
 		CentralPanel::default().show(ctx, |ui| {
