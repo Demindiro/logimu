@@ -2,7 +2,7 @@ use super::*;
 use crate::simulator::ir;
 use serde::de::{Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::{Entry, HashMap};
+use std::collections::{BinaryHeap, HashMap};
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
@@ -24,6 +24,8 @@ struct Inner {
 	memory_size: usize,
 	inputs: Box<[PointOffset]>,
 	outputs: Box<[PointOffset]>,
+	input_map: Box<[usize]>,
+	output_map: Box<[usize]>,
 	path: Arc<Path>,
 }
 
@@ -32,15 +34,24 @@ impl Inner {
 	where
 		C: CircuitComponent,
 	{
-		let (mut inputs, mut outputs) = (Vec::new(), Vec::new());
+		let (mut inp, mut outp) = (BinaryHeap::default(), BinaryHeap::default());
 
-		for (c, ..) in circuit.components(Aabb::ALL) {
-			if let Some(i) = c.external_input() {
-				inputs.push(PointOffset::new(-(i as i8 + 1), 0));
-			}
-			if let Some(o) = c.external_output() {
-				outputs.push(PointOffset::new(-(o as i8 + 1), 2));
-			}
+		for (c, p, ..) in circuit.components(Aabb::ALL) {
+			c.external_input().map(|i| inp.push((p, i)));
+			c.external_output().map(|o| outp.push((p, o)));
+		}
+
+		let mut inputs = Vec::new();
+		let mut outputs = Vec::new();
+		let mut input_map = Vec::new();
+		let mut output_map = Vec::new();
+		for (x, (_, i)) in inp.into_iter().enumerate() {
+			inputs.push(PointOffset::new(-(x as i8 + 1), 0));
+			input_map.push(i);
+		}
+		for (x, (_, o)) in outp.into_iter().enumerate() {
+			outputs.push(PointOffset::new(-(x as i8 + 1), 2));
+			output_map.push(o);
 		}
 
 		let (ir, memory_size) = circuit.generate_ir();
@@ -50,6 +61,8 @@ impl Inner {
 			memory_size,
 			inputs: inputs.into(),
 			outputs: outputs.into(),
+			input_map: input_map.into(),
+			output_map: output_map.into(),
 			path: path.into(),
 		}
 	}
@@ -152,6 +165,15 @@ impl Component for Ic {
 		out: &mut dyn FnMut(ir::IrOp),
 		memory_size: usize,
 	) -> usize {
+		let (mut inp, mut outp) = (Vec::new(), Vec::new());
+		for (from, &to) in self.0.input_map.iter().enumerate() {
+			inp.resize(inp.len().max(to + 1), usize::MAX);
+			inp[to] = *inputs.get(from).unwrap_or(&usize::MAX);
+		}
+		for (from, &to) in self.0.output_map.iter().enumerate() {
+			outp.resize(outp.len().max(to + 1), usize::MAX);
+			outp[to] = *outputs.get(from).unwrap_or(&usize::MAX);
+		}
 		out(ir::IrOp::RunIc {
 			ic: self.0.ir.clone().into(),
 			offset: memory_size,

@@ -18,7 +18,7 @@ use serde::ser::{SerializeSeq, SerializeStruct, SerializeTuple};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Point {
 	pub x: u16,
 	pub y: u16,
