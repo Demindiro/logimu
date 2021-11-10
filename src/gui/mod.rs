@@ -248,6 +248,22 @@ impl epi::App for App {
 
 			ui.separator();
 
+			// If one of the selected components has an external input, allow modifying it.
+			let mut sep = false;
+			for c in self.selected_components.iter() {
+				let (c, ..) = self.circuit.component(*c).unwrap();
+				if let Some(i) = c.external_input() {
+					(!sep).then(|| ui.label("Input value"));
+					let mut n = self.inputs[i] as isize;
+					ui.add(DragValue::new(&mut n));
+					if n != self.inputs[i] as isize {
+						self.inputs[i] = n as usize;
+					}
+					sep = true;
+				}
+			}
+			sep.then(|| ui.separator());
+
 			let mut changed = Vec::new();
 			let mut show_properties = |props: Vec<Property>| {
 				let mut errors = Vec::new();
