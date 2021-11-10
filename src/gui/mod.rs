@@ -101,7 +101,10 @@ impl App {
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
-		let _ = dbg!(s.load_from_file(f.clone().into()));
+		let e = dbg!(s.load_from_file(f.clone().into()));
+		if e.is_err() {
+			std::env::set_current_dir(f.parent().unwrap()).unwrap();
+		}
 
 		for f in std::fs::read_dir(".").unwrap() {
 			let f = f.unwrap().path();
