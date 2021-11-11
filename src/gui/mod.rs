@@ -455,7 +455,13 @@ impl epi::App for App {
 					),
 				};
 				if intersects && e.clicked_by(PointerButton::Secondary) {
-					self.selected_wires.push(wh);
+					// Mark the wire as selected, or unselect if already selected.
+					if let Some(i) = self.selected_wires.iter().position(|e| e == &wh) {
+						// Swap remove won't affect any ordering in the GUI.
+						self.selected_wires.swap_remove(i);
+					} else {
+						self.selected_wires.push(wh);
+					}
 				}
 				let (from, to) = (point2pos(w.from), point2pos(w.to));
 				paint.line_segment([from, to], stroke);
