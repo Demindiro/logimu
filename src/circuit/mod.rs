@@ -542,9 +542,12 @@ where
 	type Item = (&'a Wire, WireHandle, NexusHandle);
 
 	fn next(&mut self) -> Option<Self::Item> {
-		let (wh, (w, nh)) = self.iter.next()?;
-		(self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to))
-			.then(|| (w, WireHandle(wh), *nh))
+		loop {
+			let (wh, (w, nh)) = self.iter.next()?;
+			if self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to) {
+				return Some((w, WireHandle(wh), *nh));
+			}
+		}
 	}
 }
 
