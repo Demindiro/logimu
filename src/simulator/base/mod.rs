@@ -454,7 +454,14 @@ impl Component for Splitter {
 		assert_eq!(inputs.len(), 1, "expected only one input");
 		//assert_eq!(outputs.len(), self.outputs.len(), "outputs do not match");
 		let input = inputs[0];
-		for (&w, &r) in outputs.iter().zip(self.outputs.iter()) {
+		if input == usize::MAX {
+			return 0;
+		}
+		for (&w, &r) in outputs
+			.iter()
+			.zip(self.outputs.iter())
+			.filter(|(&w, _)| w != usize::MAX)
+		{
 			let r = r.get();
 			if r.count_ones() == r.trailing_ones() {
 				out(IrOp::Andi { a: input, i: usize::MAX, out: w });
