@@ -77,6 +77,13 @@ impl SetProperty {
 		}
 	}
 
+	fn into_str(self) -> Option<Box<str>> {
+		match self {
+			Self::Str(s) => Some(s),
+			_ => None,
+		}
+	}
+
 	fn as_mask(&self) -> Option<usize> {
 		match self {
 			Self::Mask(i) => Some(*i),
@@ -291,13 +298,15 @@ impl Component for NotGate {
 
 #[derive(Serialize, Deserialize)]
 pub struct In {
+	#[serde(default)]
+	pub name: Box<str>,
 	pub bits: NonZeroU8,
 	pub index: usize,
 }
 
 impl In {
-	pub fn new(bits: NonZeroU8, index: usize) -> Self {
-		Self { bits, index }
+	pub fn new(name: impl Into<Box<str>>, bits: NonZeroU8, index: usize) -> Self {
+		Self { name: name.into(), bits, index }
 	}
 }
 
@@ -332,12 +341,14 @@ impl Component for In {
 	}
 
 	fn properties(&self) -> Box<[Property]> {
+		let name = PropertyValue::Str { value: self.name.clone() };
 		let bits = PropertyValue::Int { value: self.bits.get().into(), range: 1..=32 };
-		Box::new([Property::new("bits", bits)])
+		[Property::new("name", name), Property::new("bits", bits)].into()
 	}
 
 	fn set_property(&mut self, name: &str, value: SetProperty) -> Result<(), Box<dyn Error>> {
 		match name {
+			"name" => self.name = value.into_str().ok_or("expected string")?,
 			"bits" => {
 				let v = value.as_int().ok_or("expected integer")?;
 				(1..=32)
@@ -353,13 +364,15 @@ impl Component for In {
 
 #[derive(Serialize, Deserialize)]
 pub struct Out {
+	#[serde(default)]
+	pub name: Box<str>,
 	pub bits: NonZeroU8,
 	pub index: usize,
 }
 
 impl Out {
-	pub fn new(bits: NonZeroU8, index: usize) -> Self {
-		Self { bits, index }
+	pub fn new(name: impl Into<Box<str>>, bits: NonZeroU8, index: usize) -> Self {
+		Self { name: name.into(), bits, index }
 	}
 }
 
@@ -392,12 +405,14 @@ impl Component for Out {
 	}
 
 	fn properties(&self) -> Box<[Property]> {
+		let name = PropertyValue::Str { value: self.name.clone() };
 		let bits = PropertyValue::Int { value: self.bits.get().into(), range: 1..=32 };
-		Box::new([Property::new("bits", bits)])
+		[Property::new("name", name), Property::new("bits", bits)].into()
 	}
 
 	fn set_property(&mut self, name: &str, value: SetProperty) -> Result<(), Box<dyn Error>> {
 		match name {
+			"name" => self.name = value.into_str().ok_or("expected string")?,
 			"bits" => {
 				let v = value.as_int().ok_or("expected integer")?;
 				(1..=32)

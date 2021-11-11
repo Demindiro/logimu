@@ -231,10 +231,10 @@ impl epi::App for App {
 				self.component = None;
 			}
 			if ui.button("in").clicked() {
-				self.component = Some(Box::new(simulator::In::new(bits, self.inputs.len())));
+				self.component = Some(Box::new(simulator::In::new("", bits, self.inputs.len())));
 			}
 			if ui.button("out").clicked() {
-				self.component = Some(Box::new(simulator::Out::new(bits, self.outputs.len())));
+				self.component = Some(Box::new(simulator::Out::new("", bits, self.outputs.len())));
 			}
 			for c in COMPONENTS.iter() {
 				if ui.button(c.0).clicked() {
@@ -291,7 +291,12 @@ impl epi::App for App {
 						}
 						PropertyValue::Str { value } => {
 							let mut value = value.to_string();
-							ui.add(TextEdit::singleline(&mut value).hint_text(name));
+							if ui
+								.add(TextEdit::singleline(&mut value).hint_text(name))
+								.changed()
+							{
+								changed.push((prop.name, SetProperty::Str(value.into())));
+							}
 						}
 						PropertyValue::Mask { value } => {
 							let (mut text, modify) = match prop_buf.take() {
