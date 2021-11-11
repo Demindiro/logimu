@@ -37,6 +37,7 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 		("xor", || Box::new(XorGate::new(b(), a()))),
 		("splitter", || Box::new(Splitter::new(a()))),
 		("merger", || Box::new(Merger::new(a()))),
+		("constant", || Box::new(Constant::new(a(), 0))),
 	]
 };
 

@@ -45,6 +45,10 @@ pub enum IrOp {
 		i: u8,
 		out: usize,
 	},
+	Load {
+		value: usize,
+		out: usize,
+	},
 	RunIc {
 		ic: Arc<[Self]>,
 		offset: usize,
@@ -69,6 +73,7 @@ impl fmt::Debug for IrOp {
 			IrOp::Andi { a, i, out } => fmt2(f, "andi", a, i, out),
 			IrOp::Slli { a, i, out } => fmt2(f, "slli", a, &(*i).into(), out),
 			IrOp::Srli { a, i, out } => fmt2(f, "srli", a, &(*i).into(), out),
+			IrOp::Load { value, out } => fmt1(f, "load", value, out),
 			IrOp::RunIc { ic, offset, inputs, outputs } => write!(
 				f,
 				"{:>3?} (runic {:>3} {:>3p} {:>3?})",

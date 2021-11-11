@@ -482,3 +482,36 @@ fn draw_merger_splitter(
 		painter.line_segment([pos + a, pos + b], stroke);
 	}
 }
+
+#[typetag::serde]
+impl CircuitComponent for Constant {
+	fn inputs(&self) -> Box<[PointOffset]> {
+		[].into()
+	}
+
+	fn outputs(&self) -> Box<[PointOffset]> {
+		CENTER.into()
+	}
+
+	fn aabb(&self) -> RelativeAabb {
+		RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(0, 0))
+	}
+}
+
+#[typetag::serde]
+impl ComponentPlacer for Constant {
+	fn name(&self) -> Box<str> {
+		"constant".into()
+	}
+
+	fn draw(&self, painter: &Painter, pos: Pos2, _: Direction, _: &[usize], _: &[usize]) {
+		let pad = (self.bits.get() + 3) / 4;
+		painter.text(
+			pos,
+			Align2::CENTER_CENTER,
+			format!("{:01$x}", self.value, pad.into()),
+			TextStyle::Monospace,
+			Color32::LIGHT_GRAY,
+		);
+	}
+}
