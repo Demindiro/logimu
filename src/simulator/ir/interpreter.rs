@@ -18,6 +18,9 @@ pub fn run(ops: &[IrOp], memory: &mut [usize], input: &[usize], output: &mut [us
 			&IrOp::Slli { a, i, out } => memory[out] = memory[a] << i,
 			&IrOp::Srli { a, i, out } => memory[out] = memory[a] >> i,
 			&IrOp::Load { value, out } => memory[out] = value,
+			IrOp::Read { memory: mem, address, out } => {
+				memory[*out] = *mem.get(memory[*address]).unwrap_or(&0)
+			}
 			IrOp::RunIc { ic, offset, inputs, outputs } => {
 				let mut inp = [0; 256];
 				let mut outp = [0; 256];

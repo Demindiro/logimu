@@ -49,6 +49,11 @@ pub enum IrOp {
 		value: usize,
 		out: usize,
 	},
+	Read {
+		memory: Arc<[usize]>,
+		address: usize,
+		out: usize,
+	},
 	RunIc {
 		ic: Arc<[Self]>,
 		offset: usize,
@@ -74,6 +79,7 @@ impl fmt::Debug for IrOp {
 			IrOp::Slli { a, i, out } => fmt2(f, "slli", a, &(*i).into(), out),
 			IrOp::Srli { a, i, out } => fmt2(f, "srli", a, &(*i).into(), out),
 			IrOp::Load { value, out } => fmt1(f, "load", value, out),
+			IrOp::Read { address, out, .. } => write!(f, "{:>3} = (read [_] {:>3})", out, address),
 			IrOp::RunIc { ic, offset, inputs, outputs } => write!(
 				f,
 				"{:>3?} (runic {:>3} {:>3p} {:>3?})",

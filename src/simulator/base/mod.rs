@@ -1,3 +1,7 @@
+mod rom;
+
+pub use rom::*;
+
 use super::ir::IrOp;
 use crate::impl_dyn;
 use core::fmt;

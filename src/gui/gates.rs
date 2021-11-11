@@ -515,3 +515,60 @@ impl ComponentPlacer for Constant {
 		);
 	}
 }
+
+#[typetag::serde]
+impl CircuitComponent for ReadOnlyMemory {
+	fn inputs(&self) -> Box<[PointOffset]> {
+		[PointOffset::new(-4, 0)].into()
+	}
+
+	fn outputs(&self) -> Box<[PointOffset]> {
+		[PointOffset::new(4, 0)].into()
+	}
+
+	fn aabb(&self) -> RelativeAabb {
+		RelativeAabb::new(PointOffset::new(-4, -3), PointOffset::new(4, 3))
+	}
+}
+
+#[typetag::serde]
+impl ComponentPlacer for ReadOnlyMemory {
+	fn name(&self) -> Box<str> {
+		"rom".into()
+	}
+
+	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], _: &[usize]) {
+		let RelativeAabb { min, max } = dir * self.aabb();
+		let min = Vec2::new(f32::from(min.x) * 16.0, f32::from(min.y) * 16.0);
+		let max = Vec2::new(f32::from(max.x) * 16.0, f32::from(max.y) * 16.0);
+		let (min, max) = (pos + min, pos + max);
+
+		let rect = Rect::from_min_max(min, max);
+		let stroke = Stroke::new(3.0, Color32::BLACK);
+		painter.add(RectShape { rect, corner_radius: 0.0, fill: Color32::WHITE, stroke });
+		let rect = rect.shrink(16.0);
+		let stroke = Stroke::new(0.0, Color32::BLACK);
+		painter.add(RectShape { rect, corner_radius: 0.0, fill: Color32::DARK_GRAY, stroke });
+
+		for d in -2..=2i8 {
+			let v = inputs
+				.get(0)
+				.and_then(|i| {
+					if d > 0 {
+						i.checked_add(d as usize)
+					} else {
+						i.checked_sub(-d as usize)
+					}
+				})
+				.map(|i| format!("{:03x} {:08x}", i, self.get(i).unwrap_or(0)))
+				.unwrap_or_else(|| "xxx xxxxxxxx".into());
+			painter.text(
+				pos + Vec2::new(0.0, f32::from(d) * 12.0),
+				Align2::CENTER_CENTER,
+				v,
+				TextStyle::Monospace,
+				Color32::WHITE,
+			);
+		}
+	}
+}
