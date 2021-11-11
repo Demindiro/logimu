@@ -16,7 +16,7 @@ use crate::simulator::{GraphNodeHandle, Property, PropertyValue, SetProperty};
 
 use core::any::TypeId;
 use eframe::{egui, epi};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -59,7 +59,7 @@ pub struct App {
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
 	circuit: Box<circuit::Circuit<Box<dyn ComponentPlacer>>>,
-	ic_components: HashMap<Box<Path>, Ic>,
+	ic_components: BTreeMap<Box<Path>, Ic>,
 
 	selected_components: Vec<GraphNodeHandle>,
 	selected_wires: Vec<WireHandle>,
