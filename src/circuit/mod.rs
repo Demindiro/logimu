@@ -247,29 +247,10 @@ pub struct Circuit<C>
 where
 	C: CircuitComponent,
 {
-	/// A grid is used to speed up intersection lookups.
-	///
-	/// To save on memory, the grid is split into zones.
-	///
-	/// - Root zone: 1024x1024 subzones -> 24 MiB memory on 64-bit.
-	/// - Subzone: 64x64 points. Memory usage depends on amount of nodes (components & wires) in zone.
-	zones: Box<[[Zone; 1024]; 1024]>,
 	/// All wires in this circuit.
 	wires: Arena<(Wire, NexusHandle)>,
 	/// A graph connecting all nodes. Used for IR generation.
 	graph: Graph<C, (Point, Direction), Vec<WireHandle>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ComponentOrWire {
-	Component(usize),
-	Wire(WireHandle),
-}
-
-/// A single zone in a circuit.
-pub struct Zone {
-	/// A list of wires and nodes present in this zone.
-	nodes: Vec<ComponentOrWire>,
 }
 
 impl<C> Circuit<C>
@@ -315,16 +296,6 @@ where
 		// to this wire's nexus.
 		self.connect_wire(Some(handle));
 
-		let (min_x, min_y) = (min.x / 64, min.y / 64);
-		// Round down, then count up to max including max so zero-width/height
-		// wires are visible.
-		let (max_x, max_y) = (max.x / 64, max.y / 64);
-		for y in min_y..=max_y {
-			for x in min_x..=max_x {
-				self.zones[usize::from(y)][usize::from(x)].add_wire(handle);
-			}
-		}
-
 		handle
 	}
 
@@ -333,15 +304,6 @@ where
 
 		// Remove from zones.
 		let Aabb { min, max } = wire.aabb();
-		let (min_x, min_y) = (min.x / 64, min.y / 64);
-		// Round down, then count up to max including max so zero-width/height
-		// wires are visible.
-		let (max_x, max_y) = (max.x / 64, max.y / 64);
-		for y in min_y..=max_y {
-			for x in min_x..=max_x {
-				self.zones[usize::from(y)][usize::from(x)].remove_wire(handle);
-			}
-		}
 
 		// Remove from nexus.
 		let list = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
@@ -359,15 +321,10 @@ where
 	}
 
 	pub fn wires(&self, aabb: Aabb) -> WireIter<C> {
-		let zone = Point::new(aabb.min.x / Zone::WIDTH, aabb.min.y / Zone::HEIGHT);
-		let zone_max = Point::new(aabb.max.x / Zone::WIDTH, aabb.max.y / Zone::HEIGHT);
 		WireIter {
-			circuit: self,
+			iter: self.wires.iter(),
 			aabb,
-			zone,
-			zone_min_x: zone.x,
-			zone_max,
-			zone_index: 0,
+			_marker: std::marker::PhantomData,
 		}
 	}
 
@@ -426,23 +383,16 @@ where
 		}
 	}
 
-	fn intersect_zone<'a>(&'a self, position: Point) -> &'a Zone {
-		let (x, y) = (usize::from(position.x) / 64, usize::from(position.y) / 64);
-		&self.zones[y][x]
-	}
-
 	fn intersect_point(
 		&self,
 		position: Point,
-		wire_callback: impl FnMut(WireHandle),
-		component_callback: impl FnMut(usize),
+		mut wire_callback: impl FnMut(WireHandle),
+		_component_callback: impl FnMut(usize),
 	) {
-		self.intersect_zone(position).intersect_point(
-			self,
-			position,
-			wire_callback,
-			component_callback,
-		);
+		for (h, (w, ..)) in self.wires.iter() {
+			w.intersect_point(position)
+				.then(|| wire_callback(WireHandle(h)));
+		}
 	}
 
 	fn connect_wire(&mut self, wire: Option<WireHandle>) {
@@ -477,21 +427,7 @@ where
 	C: CircuitComponent,
 {
 	fn default() -> Self {
-		use core::mem::MaybeUninit;
-		let zones = unsafe {
-			// SAFETY: nested MaybeUninits to single MaybeUninit still indicates the underlying
-			// memory is unitialized.
-			let mut b: Box<[[MaybeUninit<Zone>; 1024]; 1024]> = Box::new_uninit().assume_init();
-			b.iter_mut().for_each(|r| {
-				r.iter_mut().for_each(|e| {
-					e.write(Zone { nodes: Vec::new() });
-				})
-			});
-			// SAFETY: All elements have been initialized and we're simply casting each element
-			// from MaybeUninit<Zone> to Zone.
-			core::mem::transmute(b)
-		};
-		Self { zones, wires: Default::default(), graph: Graph::new() }
+		Self { wires: Default::default(), graph: Graph::new() }
 	}
 }
 
@@ -590,70 +526,13 @@ where
 	}
 }
 
-impl Zone {
-	const WIDTH: u16 = 64;
-	const HEIGHT: u16 = 64;
-
-	/// Get all wires and components at a given point.
-	fn intersect_point<C>(
-		&self,
-		circuit: &Circuit<C>,
-		position: Point,
-		mut wire_callback: impl FnMut(WireHandle),
-		mut component_callback: impl FnMut(usize),
-	) where
-		C: CircuitComponent,
-	{
-		for n in self.nodes.iter() {
-			match n {
-				ComponentOrWire::Wire(n) => {
-					circuit.wires[n.0]
-						.0
-						.intersect_point(position)
-						.then(|| wire_callback(*n));
-				}
-				ComponentOrWire::Component(_) => todo!(),
-			}
-		}
-	}
-
-	fn add_wire(&mut self, handle: WireHandle) {
-		self.nodes.push(ComponentOrWire::Wire(handle));
-	}
-
-	fn remove_wire(&mut self, handle: WireHandle) {
-		self.nodes.remove(
-			self.nodes
-				.iter()
-				.position(|e| e == &ComponentOrWire::Wire(handle))
-				.unwrap(),
-		);
-	}
-
-	fn find_ports_at<'a, F, C>(
-		&self,
-		circuit: &'a Circuit<C>,
-		position: Point,
-		mut in_callback: F,
-		mut out_callback: F,
-	) where
-		F: FnMut(&'a C, usize),
-		C: CircuitComponent,
-	{
-		todo!()
-	}
-}
-
 pub struct WireIter<'a, C>
 where
 	C: CircuitComponent,
 {
-	circuit: &'a Circuit<C>,
 	aabb: Aabb,
-	zone: Point,
-	zone_min_x: u16,
-	zone_max: Point,
-	zone_index: usize,
+	iter: crate::arena::Iter<'a, (Wire, NexusHandle)>,
+	_marker: std::marker::PhantomData<C>,
 }
 
 impl<'a, C> Iterator for WireIter<'a, C>
@@ -663,25 +542,9 @@ where
 	type Item = (&'a Wire, WireHandle, NexusHandle);
 
 	fn next(&mut self) -> Option<Self::Item> {
-		while self.zone.y <= self.zone_max.y {
-			let zone = &self.circuit.zones[usize::from(self.zone.y)][usize::from(self.zone.x)];
-			while let Some(h) = zone.nodes.get(self.zone_index) {
-				self.zone_index += 1;
-				if let ComponentOrWire::Wire(wh) = *h {
-					let (w, nh) = &self.circuit.wires[wh.0];
-					if self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to) {
-						return Some((w, wh, *nh));
-					}
-				}
-			}
-			self.zone_index = 0;
-			self.zone.x += 1;
-			if self.zone.x > self.zone_max.x {
-				self.zone.x = self.zone_min_x;
-				self.zone.y += 1;
-			}
-		}
-		None
+		let (wh, (w, nh)) = self.iter.next()?;
+		(self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to))
+			.then(|| (w, WireHandle(wh), *nh))
 	}
 }
 
