@@ -115,7 +115,7 @@ impl App {
 			}
 		}
 
-		s.file_path = f.into();
+		s.file_path = PathBuf::from(f.components().last().unwrap().as_os_str()).into();
 
 		s
 	}
