@@ -22,7 +22,7 @@ impl ComponentPlacer for Ic {
 		inputs: &[usize],
 		outputs: &[usize],
 	) {
-		let aabb = direction * self.aabb();
+		let aabb = self.aabb(direction);
 		let min = position + Vec2::new(aabb.min.x.into(), aabb.min.y.into()) * 16.0;
 		let max = position + Vec2::new(aabb.max.x.into(), aabb.max.y.into()) * 16.0;
 		let stroke = Stroke::new(3.0, Color32::BLACK);

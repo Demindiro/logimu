@@ -421,7 +421,7 @@ impl epi::App for App {
 			let mut hover_box = None;
 			for (c, p, d, h) in self.circuit.components(aabb) {
 				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
-				let aabb = d * c.aabb();
+				let aabb = c.aabb(d);
 				let delta = Vec2::new(8.0, 8.0);
 				let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
 				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
@@ -525,7 +525,7 @@ impl epi::App for App {
 			let stroke = Stroke::new(2.0, selected_color);
 			for h in self.selected_components.iter() {
 				let (c, p, d) = self.circuit.component(*h).unwrap();
-				draw_aabb(p, d * c.aabb(), stroke);
+				draw_aabb(p, c.aabb(d), stroke);
 			}
 
 			// Draw a box around the hovered component

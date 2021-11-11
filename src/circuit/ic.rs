@@ -218,7 +218,7 @@ impl CircuitComponent for Ic {
 		self.0.outputs.clone()
 	}
 
-	fn aabb(&self) -> RelativeAabb {
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
 		let (inp, outp) = (self.inputs(), self.outputs());
 		let mut iter = inp.iter().chain(outp.iter());
 		let s = *iter.next().unwrap();
@@ -226,6 +226,6 @@ impl CircuitComponent for Ic {
 		iter.for_each(|p| aabb = aabb.expand(*p));
 		aabb.min.x -= 1;
 		aabb.max.x += 1;
-		aabb
+		dir * aabb
 	}
 }

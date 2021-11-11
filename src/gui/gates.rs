@@ -28,8 +28,8 @@ macro_rules! impl_cc {
 				$out.into()
 			}
 
-			fn aabb(&self) -> RelativeAabb {
-				RelativeAabb::new(
+			fn aabb(&self, dir: Direction) -> RelativeAabb {
+				dir * RelativeAabb::new(
 					PointOffset::new($min_x, $min_y),
 					PointOffset::new($max_x, $max_y),
 				)
@@ -210,8 +210,8 @@ impl CircuitComponent for NotGate {
 		OUT.into()
 	}
 
-	fn aabb(&self) -> RelativeAabb {
-		RelativeAabb::new(PointOffset::new(-1, 0), PointOffset::new(1, 0))
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		dir * RelativeAabb::new(PointOffset::new(-1, 0), PointOffset::new(1, 0))
 	}
 }
 
@@ -255,8 +255,8 @@ impl CircuitComponent for In {
 		Some(self.index)
 	}
 
-	fn aabb(&self) -> RelativeAabb {
-		RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(1, 0))
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		aabb_in_out(self.bits, dir)
 	}
 }
 
@@ -267,35 +267,14 @@ impl ComponentPlacer for In {
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], _: &[usize]) {
-		let bits = self.bits.get();
-		if bits == 1 {
-			let stroke = Stroke::new(3.0, Color32::BLACK);
-			let rect = Rect::from_center_size(pos, Vec2::new(16.0, 16.0))
-				.translate(dir.rotate_vec2(Vec2::new(8.0, 0.0)));
-			let fill = inputs
-				.get(self.index)
-				.map(|i| [Color32::DARK_GREEN, Color32::GREEN][*i & 1])
-				.unwrap_or(Color32::BLUE);
-			painter.add(Shape::Rect(RectShape {
-				corner_radius: 0.0,
-				fill,
-				rect,
-				stroke,
-			}));
-		} else {
-			let mask = 1usize.wrapping_shl(bits.into()).wrapping_sub(1);
-			let text = inputs
-				.get(self.index)
-				.map(|i| format!("{:01$b}", *i & mask, bits.into()))
-				.unwrap_or_else(|| "x".repeat(bits.into()));
-			painter.text(
-				pos,
-				Align2::RIGHT_CENTER,
-				text,
-				TextStyle::Monospace,
-				Color32::WHITE,
-			);
-		}
+		draw_in_out(
+			painter,
+			pos,
+			dir,
+			inputs.get(self.index).copied(),
+			self.bits.get(),
+			0.0,
+		)
 	}
 }
 
@@ -313,8 +292,8 @@ impl CircuitComponent for Out {
 		Some(self.index)
 	}
 
-	fn aabb(&self) -> RelativeAabb {
-		RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(1, 0))
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		aabb_in_out(self.bits, dir)
 	}
 }
 
@@ -325,34 +304,78 @@ impl ComponentPlacer for Out {
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, _: &[usize], outputs: &[usize]) {
-		let bits = self.bits.get();
-		if bits == 1 {
-			let stroke = Stroke::new(3.0, Color32::BLACK);
-			let center = pos + dir.rotate_vec2(Vec2::new(8.0, 0.0));
-			let fill = outputs
-				.get(self.index)
-				.map(|i| [Color32::DARK_GREEN, Color32::GREEN][*i & 1])
-				.unwrap_or(Color32::BLUE);
-			painter.add(Shape::Circle(CircleShape {
-				center,
-				radius: 8.0,
-				fill,
-				stroke,
-			}));
-		} else {
-			let mask = 1usize.wrapping_shl(bits.into()).wrapping_sub(1);
-			let text = outputs
-				.get(self.index)
-				.map(|i| format!("{:01$b}", *i & mask, bits.into()))
-				.unwrap_or_else(|| "x".repeat(bits.into()));
-			painter.text(
-				pos,
-				Align2::LEFT_CENTER,
-				text,
-				TextStyle::Monospace,
-				Color32::WHITE,
-			);
+		draw_in_out(
+			painter,
+			pos,
+			dir,
+			outputs.get(self.index).copied(),
+			self.bits.get(),
+			8.0,
+		)
+	}
+}
+
+fn aabb_in_out(bits: NonZeroU8, dir: Direction) -> RelativeAabb {
+	let w = (bits.get() > 1).then(|| 4).unwrap_or(1);
+	let h = match dir {
+		Direction::Left | Direction::Right => [0, 1, 1, 2][usize::from(bits.get() - 1) / 8],
+		Direction::Up | Direction::Down => [1, 2, 3, 4][usize::from(bits.get() - 1) / 8],
+	};
+	let ((ax, ay), (bx, by)) = match dir {
+		Direction::Right => ((0, -h), (w, h)),
+		Direction::Left => ((-w, -h), (0, h)),
+		Direction::Up => ((-w / 2, -h), (w / 2, 0)),
+		Direction::Down => ((-w / 2, 0), (w / 2, h)),
+	};
+	RelativeAabb::new(PointOffset::new(ax, ay), PointOffset::new(bx, by))
+}
+
+fn draw_in_out(
+	painter: &Painter,
+	pos: Pos2,
+	dir: Direction,
+	value: Option<usize>,
+	bits: u8,
+	corner_radius: f32,
+) {
+	let stroke = Stroke::new(3.0, Color32::BLACK);
+	if bits == 1 {
+		let rect = Rect::from_center_size(pos, Vec2::new(16.0, 16.0))
+			.translate(dir.rotate_vec2(Vec2::new(8.0, 0.0)));
+		let fill = value
+			.map(|i| [Color32::DARK_GREEN, Color32::GREEN][i & 1])
+			.unwrap_or(Color32::BLUE);
+		painter.add(Shape::Rect(RectShape { corner_radius, fill, rect, stroke }));
+	} else {
+		let mut s = String::new();
+		for i in 0..bits {
+			(i != 0 && i % 8 == 0).then(|| s.push('\n'));
+			s.push(value.map(|n| ['0', '1'][(n >> i) & 1]).unwrap_or('x'));
 		}
+		(bits > 8).then(|| s.extend((0..(64 - bits) % 8).map(|_| ' ')));
+		let x = 16.0 * 4.0;
+		let y = 16.0 * [1.0, 2.0, 3.0, 4.0][usize::from(bits - 1) >> 3];
+		let mut offt = dir.rotate_vec2(Vec2::new(8.0 * 4.0, 0.0));
+		let mut rect = Rect::from_center_size(pos, Vec2::new(x, y));
+		match dir {
+			Direction::Left | Direction::Right => (),
+			Direction::Up => offt.y = -y / 2.0,
+			Direction::Down => offt.y = y / 2.0,
+		};
+		rect = rect.translate(offt);
+		painter.add(Shape::Rect(RectShape {
+			corner_radius,
+			fill: Color32::DARK_GRAY,
+			rect,
+			stroke,
+		}));
+		painter.text(
+			pos + offt,
+			Align2::CENTER_CENTER,
+			s.chars().rev().collect::<String>(),
+			TextStyle::Monospace,
+			Color32::WHITE,
+		);
 	}
 }
 
@@ -368,8 +391,8 @@ impl CircuitComponent for Splitter {
 			.collect()
 	}
 
-	fn aabb(&self) -> RelativeAabb {
-		aabb_merger_splitter(&*self.inputs(), &*self.outputs())
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		aabb_merger_splitter(&*self.inputs(), &*self.outputs(), dir)
 	}
 }
 
@@ -411,8 +434,8 @@ impl CircuitComponent for Merger {
 		OUT.into()
 	}
 
-	fn aabb(&self) -> RelativeAabb {
-		aabb_merger_splitter(&*self.inputs(), &*self.outputs())
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		aabb_merger_splitter(&*self.inputs(), &*self.outputs(), dir)
 	}
 }
 
@@ -442,11 +465,15 @@ impl ComponentPlacer for Merger {
 	}
 }
 
-fn aabb_merger_splitter(inputs: &[PointOffset], outputs: &[PointOffset]) -> RelativeAabb {
+fn aabb_merger_splitter(
+	inputs: &[PointOffset],
+	outputs: &[PointOffset],
+	dir: Direction,
+) -> RelativeAabb {
 	let mut aabb = RelativeAabb::new(inputs[0], outputs[0]);
 	inputs.iter().for_each(|&o| aabb = aabb.expand(o));
 	outputs.iter().for_each(|&o| aabb = aabb.expand(o));
-	aabb
+	dir * aabb
 }
 
 fn draw_merger_splitter(
@@ -460,7 +487,7 @@ fn draw_merger_splitter(
 ) {
 	let stroke = Stroke::new(3.0, Color32::WHITE);
 
-	let aabb = aabb_merger_splitter(in_pos, out_pos);
+	let aabb = aabb_merger_splitter(in_pos, out_pos, dir);
 
 	let (top, btm) = (
 		PointOffset::new(0, aabb.max.y),
@@ -493,8 +520,8 @@ impl CircuitComponent for Constant {
 		CENTER.into()
 	}
 
-	fn aabb(&self) -> RelativeAabb {
-		RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(0, 0))
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		dir * RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(0, 0))
 	}
 }
 
@@ -526,8 +553,8 @@ impl CircuitComponent for ReadOnlyMemory {
 		[PointOffset::new(4, 0)].into()
 	}
 
-	fn aabb(&self) -> RelativeAabb {
-		RelativeAabb::new(PointOffset::new(-4, -3), PointOffset::new(4, 3))
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		dir * RelativeAabb::new(PointOffset::new(-4, -3), PointOffset::new(4, 3))
 	}
 }
 
@@ -538,7 +565,7 @@ impl ComponentPlacer for ReadOnlyMemory {
 	}
 
 	fn draw(&self, painter: &Painter, pos: Pos2, dir: Direction, inputs: &[usize], _: &[usize]) {
-		let RelativeAabb { min, max } = dir * self.aabb();
+		let RelativeAabb { min, max } = self.aabb(dir);
 		let min = Vec2::new(f32::from(min.x) * 16.0, f32::from(min.y) * 16.0);
 		let max = Vec2::new(f32::from(max.x) * 16.0, f32::from(max.y) * 16.0);
 		let (min, max) = (pos + min, pos + max);

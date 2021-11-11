@@ -61,6 +61,6 @@ impl_dyn! {
 		ref outputs() -> Box<[PointOffset]>;
 		ref external_input() -> Option<usize>;
 		ref external_output() -> Option<usize>;
-		ref aabb() -> RelativeAabb;
+		ref aabb(dir: Direction) -> RelativeAabb;
 	}
 }

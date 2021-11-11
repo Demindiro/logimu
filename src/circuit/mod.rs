@@ -212,7 +212,7 @@ where
 		None
 	}
 
-	fn aabb(&self) -> RelativeAabb;
+	fn aabb(&self, direction: Direction) -> RelativeAabb;
 }
 
 impl_dyn! {
@@ -233,7 +233,7 @@ impl_dyn! {
 		ref outputs() -> Box<[PointOffset]>;
 		ref external_input() -> Option<usize>;
 		ref external_output() -> Option<usize>;
-		ref aabb() -> RelativeAabb;
+		ref aabb(dir: Direction) -> RelativeAabb;
 		ref typetag_name() -> &'static str;
 		ref typetag_deserialize() -> ();
 	}
