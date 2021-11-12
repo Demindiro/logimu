@@ -192,9 +192,7 @@ impl SExpr {
 		if source.chars().next() != Some('(') {
 			Err(ParseError::ExpectedOpenBrace)?;
 		}
-		let (s, rem) = Self::parse_postbrace(&mut source[1..].trim_start().chars())?;
-		// Exclude trailing ')'
-		Ok((s, rem))
+		Self::parse_postbrace(&mut source[1..].trim_start().chars())
 	}
 
 	fn parse_postbrace<'a>(source: &mut Chars<'a>) -> Result<(Self, &'a str), ParseError> {
