@@ -82,7 +82,7 @@ where
 								}
 							}
 						}
-						Err("input not found".into())
+						Err(format!("input '{}' not found", label).into())
 					}
 					"out" => {
 						let label = get_value(1)?.into_string().ok_or(RunError::ExpectedStr)?;
@@ -96,7 +96,7 @@ where
 								}
 							}
 						}
-						Err("output not found".into())
+						Err(format!("output '{}' not found", label).into())
 					}
 					"run" => {
 						use crate::simulator::ir::interpreter;
