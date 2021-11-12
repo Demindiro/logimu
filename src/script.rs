@@ -247,12 +247,13 @@ impl SExpr {
 						break Ok((Self(args.into()), source.as_str()));
 					}
 				}
+				';' => while source.next() != Some('\n') {},
 				c => {
 					let mut s = String::new();
 					s.push(c);
 					loop {
 						let c = source.as_str().chars().next();
-						if " \t\n()\"".contains(c.ok_or(ParseError::ExpectedCloseBrace)?) {
+						if " \t\n()\";".contains(c.ok_or(ParseError::ExpectedCloseBrace)?) {
 							break;
 						}
 						s.push(source.next().unwrap());
@@ -720,5 +721,21 @@ mod test {
 		let source = "(print 0b110_10_0)";
 		let (e, _) = SExpr::parse(source).unwrap();
 		assert_eq!(run(&e), "52");
+	}
+
+	#[test]
+	fn parse_comment() {
+		let source = "
+			(print \"Comments are not \" ; printed
+			)
+		";
+		let (e, _) = SExpr::parse(source).unwrap();
+		assert_eq!(run(&e), "Comments are not ");
+		let source = "
+			(print;er \"Nothing\"
+			)
+		";
+		let (e, _) = SExpr::parse(source).unwrap();
+		assert_eq!(run(&e), "");
 	}
 }
