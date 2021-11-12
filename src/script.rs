@@ -14,6 +14,7 @@ pub struct SExpr(Box<[Arg]>);
 
 #[derive(Debug)]
 pub enum Arg {
+	None,
 	SExpr(SExpr),
 	Bool(bool),
 	Int(i64),
@@ -32,6 +33,7 @@ pub enum Value {
 impl Arg {
 	pub fn to_value(&self) -> Option<Value> {
 		match self {
+			Self::None => Some(Value::None),
 			Self::Bool(b) => Some(Value::Bool(*b)),
 			Self::Int(n) => Some(Value::Int(*n)),
 			Self::Str(s) => Some(Value::Str(s.to_string())),
@@ -50,6 +52,19 @@ impl Arg {
 		match self {
 			Self::Symbol(s) => Some(&**s),
 			_ => None,
+		}
+	}
+}
+
+impl fmt::Display for Arg {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
+			Self::None => "none".fmt(f),
+			Self::SExpr(s) => s.fmt(f),
+			Self::Bool(b) => b.fmt(f),
+			Self::Int(n) => n.fmt(f),
+			Self::Str(s) => fmt::Debug::fmt(s, f),
+			Self::Symbol(s) => s.fmt(f),
 		}
 	}
 }
@@ -88,6 +103,20 @@ impl Value {
 	pub fn as_int(&self) -> Option<i64> {
 		match self {
 			&Self::Int(n) => Some(n),
+			_ => None,
+		}
+	}
+
+	pub fn as_str(&self) -> Option<&str> {
+		match self {
+			Self::Str(s) => Some(&**s),
+			_ => None,
+		}
+	}
+
+	pub fn into_string(self) -> Option<String> {
+		match self {
+			Self::Str(s) => Some(s),
 			_ => None,
 		}
 	}
@@ -165,7 +194,9 @@ impl SExpr {
 		if source.chars().next() != Some('(') {
 			Err(ParseError::ExpectedOpenBrace)?;
 		}
-		Self::parse_postbrace(&mut source[1..].trim_start().chars())
+		let (s, rem) = Self::parse_postbrace(&mut source[1..].trim_start().chars())?;
+		// Exclude trailing ')'
+		Ok((s, (!rem.is_empty()).then(|| &rem[1..]).unwrap_or("")))
 	}
 
 	fn parse_postbrace<'a>(source: &mut Chars<'a>) -> Result<(Self, &'a str), ParseError> {
@@ -247,6 +278,17 @@ pub enum ParseError {
 	InvalidDigit(char),
 }
 
+impl fmt::Display for ParseError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
+			Self::ExpectedOpenBrace => "expected opening brace '('".fmt(f),
+			Self::ExpectedCloseBrace => "expected closing brace ')'".fmt(f),
+			Self::ExpectedEndQuote => "expected closing quote '\"'".fmt(f),
+			Self::InvalidDigit(c) => write!(f, "invalid digit '{}'", c),
+		}
+	}
+}
+
 impl AsRef<[Arg]> for SExpr {
 	fn as_ref(&self) -> &[Arg] {
 		self.0.as_ref()
@@ -268,13 +310,7 @@ impl fmt::Display for SExpr {
 			if i > 0 {
 				f.write_str(" ")?;
 			}
-			match a {
-				Arg::SExpr(s) => s.fmt(f),
-				Arg::Bool(b) => b.fmt(f),
-				Arg::Int(n) => n.fmt(f),
-				Arg::Str(s) => fmt::Debug::fmt(s, f),
-				Arg::Symbol(s) => s.fmt(f),
-			}?
+			a.fmt(f)?;
 		}
 		f.write_str(")")
 	}
@@ -336,7 +372,7 @@ where
 pub struct Runner<H, S, K>
 where
 	// dyn is necessary to avoid cyclic closure reference.
-	H: for<'a> Fn(&dyn Dispatcher, &'a str, &'a SExpr) -> Result<Value, Box<dyn Error + 'a>>,
+	H: for<'a> Fn(&dyn Dispatcher, &S, &'a str, &'a SExpr) -> Result<Value, Box<dyn Error + 'a>>,
 	S: Storage<K>,
 	K: Borrow<str> + Eq + Hash,
 {
@@ -347,7 +383,7 @@ where
 
 impl<H, S, K> Runner<H, S, K>
 where
-	H: for<'a> Fn(&dyn Dispatcher, &'a str, &'a SExpr) -> Result<Value, Box<dyn Error + 'a>>,
+	H: for<'a> Fn(&dyn Dispatcher, &S, &'a str, &'a SExpr) -> Result<Value, Box<dyn Error + 'a>>,
 	S: Storage<K>,
 	K: Borrow<str> + Eq + Hash,
 {
@@ -358,7 +394,7 @@ where
 
 impl<H, S, K> Dispatcher for Runner<H, S, K>
 where
-	H: for<'a> Fn(&dyn Dispatcher, &'a str, &'a SExpr) -> Result<Value, Box<dyn Error + 'a>>,
+	H: for<'a> Fn(&dyn Dispatcher, &S, &'a str, &'a SExpr) -> Result<Value, Box<dyn Error + 'a>>,
 	S: Storage<K>,
 	K: Borrow<str> + Eq + Hash + From<Box<str>> + Clone,
 {
@@ -473,32 +509,69 @@ where
 				}
 				Ok(v)
 			}
-			f => (self.handler)(self, f, sexpr),
+			"assert" => {
+				let a = sexpr_any(1)?;
+				match get_value(a)?.as_bool() {
+					Some(true) => Ok(Value::None),
+					Some(false) => Err(RunError::AssertionFailed(a).into()),
+					None => Err(RunError::ExpectedBool.into()),
+				}
+			}
+			f => (self.handler)(self, &self.storage, f, sexpr),
 		}
 	}
 }
 
 #[derive(Debug)]
-pub enum RunError {
+pub enum RunError<'a> {
 	ExpectedFunction,
 	ExpectedSExpr,
 	ExpectedArgument,
 	ExpectedBool,
 	ExpectedSymbol,
 	ExpectedInt,
+	ExpectedStr,
 	ExpectedKeyword(&'static [&'static str]),
 	UnexpectedArgument,
 	ArithemicError,
 	SymbolNotDefined,
+	AssertionFailed(&'a Arg),
 }
 
-impl fmt::Display for RunError {
+impl fmt::Display for RunError<'_> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		fmt::Debug::fmt(self, f)
+		use RunError::*;
+		match self {
+			ExpectedFunction => "expected function".fmt(f),
+			ExpectedSExpr => "expected s-expr".fmt(f),
+			ExpectedArgument => "expected argument".fmt(f),
+			ExpectedBool => "expected boolean".fmt(f),
+			ExpectedSymbol => "expected symbol".fmt(f),
+			ExpectedInt => "expected integer".fmt(f),
+			ExpectedStr => "expected string".fmt(f),
+			ExpectedKeyword(kw) => {
+				"expected \"".fmt(f)?;
+				for (i, kw) in kw.iter().enumerate() {
+					if i == kw.len() - 1 {
+						"\" or \"".fmt(f)?;
+					} else if i > 0 {
+						"\", \"".fmt(f)?;
+					}
+					kw.fmt(f)?;
+				}
+				"\"".fmt(f)
+			}
+			UnexpectedArgument => "unexpected argument".fmt(f),
+			ArithemicError => "arithemic error".fmt(f),
+			SymbolNotDefined => "symbol not defined".fmt(f),
+			AssertionFailed(a) => write!(f, "assertion failed: `{}`", a),
+		}
 	}
 }
 
-impl Error for RunError {}
+// TODO report issue: eliding lifetime here leads to extremely confusing error with 'static
+// in Runner::handle
+impl Error for RunError<'_> {}
 
 #[cfg(test)]
 mod test {
@@ -507,10 +580,10 @@ mod test {
 	fn run(sexpr: &SExpr) -> String {
 		let out = core::cell::Cell::new(String::new());
 		Runner::<_, _, Box<str>>::new(
-			|r, f, s| match f {
+			|r, s, f, e| match f {
 				"print" => {
 					let mut o = out.take();
-					for a in &s[1..] {
+					for a in &e[1..] {
 						use core::fmt::Write;
 						match a {
 							Arg::Bool(b) => write!(o, "{}", b).unwrap(),

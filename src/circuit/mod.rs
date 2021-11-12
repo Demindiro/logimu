@@ -1,4 +1,5 @@
 mod ic;
+mod script;
 
 pub use ic::*;
 
@@ -217,6 +218,7 @@ where
 
 impl_dyn! {
 	Component for Box<dyn CircuitComponent> {
+		ref label() -> Option<&str>;
 		ref input_count() -> usize;
 		ref input_type(input: usize) -> Option<InputType>;
 		ref output_count() -> usize;

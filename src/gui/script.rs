@@ -17,7 +17,11 @@ impl ScriptEditor {
 		egui::Window::new("Script")
 			.open(&mut self.open)
 			.show(ctx, |ui| {
-				ui.code_editor(&mut circuit.script_source);
+				ui.add(
+					egui::TextEdit::multiline(&mut circuit.script_source)
+						.code_editor()
+						.desired_width(500.0),
+				);
 			});
 	}
 }

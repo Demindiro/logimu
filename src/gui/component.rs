@@ -44,6 +44,7 @@ where
 
 impl_dyn! {
 	Component for Box<dyn ComponentPlacer> {
+		ref label() -> Option<&str>;
 		ref input_count() -> usize;
 		ref input_type(input: usize) -> Option<InputType>;
 		ref output_count() -> usize;
