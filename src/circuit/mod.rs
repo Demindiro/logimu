@@ -613,35 +613,35 @@ mod test {
 	/// ```
 	#[test]
 	fn manual_xor() {
-		let mut circuit = Box::<Circuit<&dyn CircuitComponent>>::default();
+		let mut circuit = Box::<Circuit<Box<dyn CircuitComponent>>>::default();
 
-		let bits = NonZeroU8::new(1).unwrap();
+		let bits = NonZeroU8::new(4).unwrap();
 		let inputs = NonZeroOneU8::new(2).unwrap();
-		let i0 = In::new(bits, 0);
-		let i1 = In::new(bits, 1);
-		let l0 = And::new(inputs, bits);
-		let l1 = Not::new(bits);
-		let r0 = Or::new(inputs, bits);
-		let lr = And::new(inputs, bits);
-		let o0 = Out::new(bits, 0);
-		let cp = Xor::new(inputs, bits);
-		let o1 = Out::new(bits, 1);
+		let i0 = Box::new(In::new("I0", bits, 0));
+		let i1 = Box::new(In::new("I1", bits, 1));
+		let l0 = Box::new(And::new(inputs, bits));
+		let l1 = Box::new(Not::new(bits));
+		let r0 = Box::new(Or::new(inputs, bits));
+		let lr = Box::new(And::new(inputs, bits));
+		let o0 = Box::new(Out::new("O0", bits, 0));
+		let cp = Box::new(Xor::new(inputs, bits));
+		let o1 = Box::new(Out::new("O1", bits, 1));
 
 		// Inputs
-		circuit.add_component(&i0, Point::new(0, 0), Direction::Right);
-		circuit.add_component(&i1, Point::new(0, 4), Direction::Right);
+		circuit.add_component(i0, Point::new(0, 0), Direction::Right);
+		circuit.add_component(i1, Point::new(0, 4), Direction::Right);
 
 		// Connect inputs to AND
 		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 0)));
 		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 2)));
 		// Place AND and NOT
-		circuit.add_component(&l0, Point::new(4, 1), Direction::Right);
-		circuit.add_component(&l1, Point::new(8, 0), Direction::Right);
+		circuit.add_component(l0, Point::new(4, 1), Direction::Right);
+		circuit.add_component(l1, Point::new(8, 0), Direction::Right);
 		// Connect AND to NOT
 		circuit.add_wire(Wire::new(Point::new(5, 1), Point::new(7, 0)));
 
 		// Place OR
-		circuit.add_component(&r0, Point::new(4, 4), Direction::Right);
+		circuit.add_component(r0, Point::new(4, 4), Direction::Right);
 		// Connect inputs to OR
 		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 3)));
 		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 5)));
@@ -651,12 +651,12 @@ mod test {
 		circuit.add_wire(Wire::new(Point::new(5, 4), Point::new(11, 2)));
 		circuit.add_wire(Wire::new(Point::new(13, 1), Point::new(16, 0)));
 		// Place AND and output
-		circuit.add_component(&lr, Point::new(12, 1), Direction::Right);
-		circuit.add_component(&o0, Point::new(16, 0), Direction::Right);
+		circuit.add_component(lr, Point::new(12, 1), Direction::Right);
+		circuit.add_component(o0, Point::new(16, 0), Direction::Right);
 
 		// Place XOR and output
-		circuit.add_component(&cp, Point::new(4, 8), Direction::Right);
-		circuit.add_component(&o1, Point::new(16, 8), Direction::Right);
+		circuit.add_component(cp, Point::new(4, 8), Direction::Right);
+		circuit.add_component(o1, Point::new(16, 8), Direction::Right);
 		// Connect inputs to XOR and XOR to output
 		circuit.add_wire(Wire::new(Point::new(0, 0), Point::new(3, 7)));
 		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 9)));
@@ -667,87 +667,5 @@ mod test {
 		let mut out = [0; 2];
 		simulator::ir::interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
 		assert_eq!(out, [a ^ b; 2]);
-	}
-
-	#[test]
-	fn serde() {
-		use serde_test::*;
-
-		#[typetag::serde]
-		trait T: CircuitComponent {}
-
-		impl_dyn! {
-			Component for &dyn T {
-				input_count() -> usize;
-				input_type(input: usize) -> Option<InputType>;
-				output_count() -> usize;
-				output_type(output: usize) -> Option<OutputType>;
-				generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp)) -> ();
-			}
-		}
-
-		impl_dyn! {
-			CircuitComponent for &dyn T {
-				inputs() -> &[PointOffset];
-				outputs() -> &[PointOffset];
-			}
-		}
-
-		#[typetag::serde]
-		impl T for In {}
-
-		let mut c = Box::<Circuit<&dyn T>>::default();
-
-		c.add_wire(Wire::new(Point::new(1, 1), Point::new(4, 4)));
-		let n = In::new(NonZeroU8::new(3).unwrap(), 6);
-		c.add_component(&n, Point::new(1, 1), Direction::Up);
-
-		assert_ser_tokens(
-			&c,
-			&[
-				Token::Struct { len: 2, name: stringify!(Circuit) },
-				Token::Str("wires"),
-				Token::Seq { len: Some(1) },
-				Token::Struct { len: 2, name: stringify!(Wire) },
-				Token::Str("from"),
-				Token::Struct { len: 2, name: stringify!(Point) },
-				Token::Str("x"),
-				Token::U16(1),
-				Token::Str("y"),
-				Token::U16(1),
-				Token::StructEnd,
-				Token::Str("to"),
-				Token::Struct { len: 2, name: stringify!(Point) },
-				Token::Str("x"),
-				Token::U16(4),
-				Token::Str("y"),
-				Token::U16(4),
-				Token::StructEnd,
-				Token::StructEnd,
-				Token::SeqEnd,
-				Token::Str("components"),
-				Token::Seq { len: Some(1) },
-				Token::Tuple { len: 3 },
-				Token::Map { len: Some(1) },
-				Token::Str("In"),
-				Token::Struct { name: "In", len: 2 },
-				Token::Str("bits"),
-				Token::U8(3),
-				Token::Str("index"),
-				Token::U64(6),
-				Token::StructEnd,
-				Token::MapEnd,
-				Token::Struct { name: "Point", len: 2 },
-				Token::Str("x"),
-				Token::U16(1),
-				Token::Str("y"),
-				Token::U16(1),
-				Token::StructEnd,
-				Token::UnitVariant { name: "Direction", variant: "Up" },
-				Token::TupleEnd,
-				Token::SeqEnd,
-				Token::StructEnd,
-			],
-		);
 	}
 }

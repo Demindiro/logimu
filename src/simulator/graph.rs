@@ -393,9 +393,9 @@ mod test {
 	fn manual_xor() {
 		let mut graph = Graph::<Box<dyn Component>, (), ()>::new();
 
-		let bits = NonZeroU8::new(1).unwrap();
-		let i0 = graph.add(Box::new(In::new(bits, 0)), ());
-		let i1 = graph.add(Box::new(In::new(bits, 1)), ());
+		let bits = NonZeroU8::new(4).unwrap();
+		let i0 = graph.add(Box::new(In::new("I0", bits, 0)), ());
+		let i1 = graph.add(Box::new(In::new("I1", bits, 1)), ());
 		let l0 = graph.add(
 			Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)),
 			(),
@@ -413,8 +413,8 @@ mod test {
 			Box::new(XorGate::new(NonZeroOneU8::new(2).unwrap(), bits)),
 			(),
 		);
-		let o0 = graph.add(Box::new(Out::new(bits, 0)), ());
-		let o1 = graph.add(Box::new(Out::new(bits, 1)), ());
+		let o0 = graph.add(Box::new(Out::new("O0", bits, 0)), ());
+		let o1 = graph.add(Box::new(Out::new("O1", bits, 1)), ());
 
 		let i0n = graph.new_nexus(());
 		let i1n = graph.new_nexus(());
