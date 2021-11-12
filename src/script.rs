@@ -187,8 +187,6 @@ impl PartialOrd for Value {
 }
 
 impl SExpr {
-	const DECIMAL_CHARS: &'static str = "0123456789";
-
 	pub fn parse(source: &str) -> Result<(Self, &str), ParseError> {
 		let source = source.trim_start();
 		if source.chars().next() != Some('(') {
@@ -196,13 +194,15 @@ impl SExpr {
 		}
 		let (s, rem) = Self::parse_postbrace(&mut source[1..].trim_start().chars())?;
 		// Exclude trailing ')'
-		Ok((s, (!rem.is_empty()).then(|| &rem[1..]).unwrap_or("")))
+		Ok((s, rem))
 	}
 
 	fn parse_postbrace<'a>(source: &mut Chars<'a>) -> Result<(Self, &'a str), ParseError> {
 		let mut args = Vec::new();
+		let mut neg_number = false;
 		loop {
 			let c = source.next().ok_or(ParseError::ExpectedCloseBrace)?;
+			let after = source.as_str().chars().next();
 			match c {
 				' ' | '\t' | '\n' => (),
 				')' => break Ok((Self(args.into()), source.as_str())),
@@ -221,10 +221,28 @@ impl SExpr {
 					}
 					args.push(Arg::Str(s.into()));
 				}
-				//'0' => todo!("dec/bin/oct/hex num"),
+				'-' if after.map_or(false, |c| c.is_digit(10)) => neg_number = true,
+				'0' if after.map_or(false, |c| "box".contains(c)) => {
+					// Skip '0'
+					source.next().unwrap();
+					// Skip 'box'
+					let c = source.next().unwrap();
+					let (a, f) = match after.unwrap() {
+						'b' => Self::parse_num(c, source, 2)?,
+						'o' => Self::parse_num(c, source, 8)?,
+						'x' => Self::parse_num(c, source, 16)?,
+						_ => unreachable!(),
+					};
+					args.push(Arg::Int(neg_number.then(|| -a).unwrap_or(a)));
+					neg_number = false;
+					if f {
+						break Ok((Self(args.into()), source.as_str()));
+					}
+				}
 				'0'..='9' => {
-					let (a, f) = Self::parse_decimal(c, source)?;
-					args.push(a);
+					let (a, f) = Self::parse_num(c, source, 10)?;
+					args.push(Arg::Int(neg_number.then(|| -a).unwrap_or(a)));
+					neg_number = false;
 					if f {
 						break Ok((Self(args.into()), source.as_str()));
 					}
@@ -249,21 +267,31 @@ impl SExpr {
 		}
 	}
 
-	/// Parse a decimal number.
+	/// Parse a number of the given base.
+	///
+	/// '_' are ignored.
 	///
 	/// # Returns
 	///
 	/// The argument and whether an ending brace (')') was encountered.
-	fn parse_decimal(n: char, source: &mut Chars) -> Result<(Arg, bool), ParseError> {
-		assert!('0' <= n && n <= '9', "digit is not decimal: '{}'", n);
-		let mut n = (n as u8 - b'0').into();
+	fn parse_num(n: char, source: &mut Chars, radix: u8) -> Result<(i64, bool), ParseError> {
+		let c2n = |c: char| {
+			match c.to_ascii_lowercase() {
+				'0'..='9' => Some(c as u8 - b'0'),
+				'a'..='z' => Some(c as u8 - b'a' + 10),
+				_ => None,
+			}
+			.and_then(|n| (n < radix).then(|| n))
+			.ok_or(ParseError::InvalidDigit(c))
+		};
+		let mut n = c2n(n).expect("bad start digit").into();
 		loop {
 			let c = source.next().ok_or(ParseError::ExpectedCloseBrace)?;
-			match c {
-				' ' | '\t' | '\n' => break Ok((Arg::Int(n), false)),
-				')' => break Ok((Arg::Int(n), true)),
-				'0'..='9' => n = n * 10 + i64::from(c as u8 - b'0'),
+			match c.to_ascii_lowercase() {
+				' ' | '\t' | '\n' => break Ok((n, false)),
+				')' => break Ok((n, true)),
 				'_' => continue,
+				'0'..='9' | 'a'..='z' => n = n * i64::from(radix) + i64::from(c2n(c)?),
 				_ => Err(ParseError::InvalidDigit(c))?,
 			}
 		}
@@ -596,6 +624,7 @@ mod test {
 								write!(o, "{}", v).unwrap();
 							}
 							Arg::Symbol(s) => todo!("handle symbols ({})", s),
+							_ => todo!(),
 						}
 					}
 					out.set(o);
@@ -677,5 +706,19 @@ mod test {
 			s
 		};
 		assert_eq!(run(&e), expected);
+	}
+
+	#[test]
+	fn parse_neg() {
+		let source = "(print -42)";
+		let (e, _) = SExpr::parse(source).unwrap();
+		assert_eq!(run(&e), "-42");
+	}
+
+	#[test]
+	fn parse_bin() {
+		let source = "(print 0b110_10_0)";
+		let (e, _) = SExpr::parse(source).unwrap();
+		assert_eq!(run(&e), "52");
 	}
 }
