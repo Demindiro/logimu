@@ -15,8 +15,7 @@ where
 		let ir: Rc<[_]> = ir.into();
 		let mut src = self.script_source.trim_start();
 		let mut tests = Vec::new();
-		while !src.is_empty() {
-			let (script, s) = SExpr::parse(src)?;
+		while let Some((script, s)) = SExpr::parse(src)? {
 			if script.get(0).and_then(Arg::as_symbol) == Some("test") {
 				// Ensure name exists and is valid.
 				script

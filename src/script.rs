@@ -187,12 +187,28 @@ impl PartialOrd for Value {
 }
 
 impl SExpr {
-	pub fn parse(source: &str) -> Result<(Self, &str), ParseError> {
-		let source = source.trim_start();
+	/// Parse a LISP script. Returns `Ok(None)` if no expression was found (i.e.
+	/// the source is empty or consists only of comments).
+	pub fn parse(mut source: &str) -> Result<Option<(Self, &str)>, ParseError> {
+		loop {
+			source = source.trim_start();
+			if source.starts_with(";") {
+				let mut it = source.chars();
+				while it.next().map_or(false, |c| c != '\n') {}
+				source = it.as_str();
+			} else {
+				break;
+			}
+		}
+		if source.is_empty() {
+			return Ok(None);
+		}
 		if source.chars().next() != Some('(') {
 			Err(ParseError::ExpectedOpenBrace)?;
 		}
-		Self::parse_postbrace(&mut source[1..].trim_start().chars())
+		Ok(Some(Self::parse_postbrace(
+			&mut source[1..].trim_start().chars(),
+		)?))
 	}
 
 	fn parse_postbrace<'a>(source: &mut Chars<'a>) -> Result<(Self, &'a str), ParseError> {
@@ -642,7 +658,7 @@ mod test {
 	fn print() {
 		let source = "(print \"Hello, world! 123 == 345 is \" (= 123 345))";
 		let fmt = source;
-		let (e, s) = SExpr::parse(source).unwrap();
+		let (e, s) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(format!("{}", e), fmt);
 		assert_eq!(s, "");
 		assert_eq!(run(&e), "Hello, world! 123 == 345 is false");
@@ -652,7 +668,7 @@ mod test {
 	fn scuffed_print_parse() {
 		let source = "(print(= 123 3_4_5))teehee";
 		let fmt = "(print (= 123 345))";
-		let (e, s) = SExpr::parse(source).unwrap();
+		let (e, s) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(format!("{}", e), fmt);
 		assert_eq!(s, "teehee");
 		assert_eq!(run(&e), "false");
@@ -668,7 +684,7 @@ mod test {
 					((> 3 1) \"Greater\")))
 		";
 		let fmt = "(print (cond ((< 3 1) \"Less\") ((= 3 1) \"Equal\") ((> 3 1) \"Greater\")))";
-		let (e, s) = SExpr::parse(source).unwrap();
+		let (e, s) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(format!("{}", e), fmt);
 		assert!(s.chars().all(char::is_whitespace));
 		assert_eq!(run(&e), "Greater");
@@ -687,7 +703,7 @@ mod test {
 					\"\n\"))
 		";
 		let fmt = "(for i from 1 to 100 (print (cond ((= (% i 15) 0) \"FizzBuzz\") ((= (% i 3) 0) \"Fizz\") ((= (% i 5) 0) \"Buzz\") (true i)) \"\\n\"))";
-		let (e, s) = SExpr::parse(source).unwrap();
+		let (e, s) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(format!("{:#}", e), fmt);
 		assert!(s.chars().all(char::is_whitespace));
 
@@ -710,14 +726,14 @@ mod test {
 	#[test]
 	fn parse_neg() {
 		let source = "(print -42)";
-		let (e, _) = SExpr::parse(source).unwrap();
+		let (e, _) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(run(&e), "-42");
 	}
 
 	#[test]
 	fn parse_bin() {
 		let source = "(print 0b110_10_0)";
-		let (e, _) = SExpr::parse(source).unwrap();
+		let (e, _) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(run(&e), "52");
 	}
 
@@ -727,13 +743,13 @@ mod test {
 			(print \"Comments are not \" ; printed
 			)
 		";
-		let (e, _) = SExpr::parse(source).unwrap();
+		let (e, _) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(run(&e), "Comments are not ");
 		let source = "
 			(print;er \"Nothing\"
 			)
 		";
-		let (e, _) = SExpr::parse(source).unwrap();
+		let (e, _) = SExpr::parse(source).unwrap().unwrap();
 		assert_eq!(run(&e), "");
 	}
 }
