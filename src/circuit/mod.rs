@@ -251,6 +251,8 @@ where
 	wires: Arena<(Wire, NexusHandle)>,
 	/// A graph connecting all nodes. Used for IR generation.
 	graph: Graph<C, (Point, Direction), Vec<WireHandle>>,
+	/// The source of the attached script, if any.
+	pub script_source: String,
 }
 
 impl<C> Circuit<C>
@@ -427,7 +429,11 @@ where
 	C: CircuitComponent,
 {
 	fn default() -> Self {
-		Self { wires: Default::default(), graph: Graph::new() }
+		Self {
+			wires: Default::default(),
+			graph: Graph::new(),
+			script_source: Default::default(),
+		}
 	}
 }
 
@@ -453,6 +459,9 @@ where
 				.map(|(c, _, (p, d))| (c, p, d))
 				.collect::<Box<_>>(),
 		)?;
+		if !self.script_source.is_empty() {
+			circuit.serialize_field("script", &self.script_source);
+		}
 		circuit.end()
 	}
 }
@@ -470,6 +479,7 @@ where
 		enum Field {
 			Wires,
 			Components,
+			Script,
 		}
 
 		struct CircuitVisitor<C>(core::marker::PhantomData<C>);
@@ -490,6 +500,7 @@ where
 			{
 				let mut s = Circuit::default();
 				let (mut handled_wires, mut handled_components) = (false, false);
+				let mut handled_script = false;
 
 				while let Some(key) = map.next_key()? {
 					match key {
@@ -511,6 +522,13 @@ where
 								s.add_component(c, p, d);
 							}
 						}
+						Field::Script => {
+							if handled_script {
+								Err(de::Error::duplicate_field("script"))?;
+							}
+							handled_script = true;
+							s.script_source = map.next_value::<String>()?;
+						}
 					}
 				}
 
@@ -520,7 +538,7 @@ where
 
 		deserializer.deserialize_struct(
 			stringify!(Circuit),
-			&["wires", "components"],
+			&["wires", "components", "script"],
 			CircuitVisitor(core::marker::PhantomData),
 		)
 	}
