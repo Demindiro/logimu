@@ -1,10 +1,13 @@
 #![feature(binary_heap_into_iter_sorted)]
+#![feature(destructuring_assignment)]
+#![feature(iter_advance_by)]
 #![feature(new_uninit)]
 #![feature(map_try_insert)]
 
 mod arena;
 mod circuit;
 mod gui;
+mod script;
 mod simulator;
 
 #[macro_export]
