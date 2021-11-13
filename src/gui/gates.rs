@@ -487,13 +487,12 @@ fn draw_merger_splitter(
 ) {
 	let stroke = Stroke::new(3.0, Color32::WHITE);
 
-	let aabb = aabb_merger_splitter(in_pos, out_pos, dir);
+	let aabb = aabb_merger_splitter(in_pos, out_pos, Direction::Right);
 
 	let (top, btm) = (
-		PointOffset::new(0, aabb.max.y),
-		PointOffset::new(0, aabb.min.y),
+		dir * PointOffset::new(0, aabb.max.y),
+		dir * PointOffset::new(0, aabb.min.y),
 	);
-	let (top, btm) = (dir * top, dir * btm);
 	let top = Vec2::new(f32::from(top.x) * 16.0, f32::from(top.y) * 16.0);
 	let btm = Vec2::new(f32::from(btm.x) * 16.0, f32::from(btm.y) * 16.0);
 	painter.line_segment([pos + top, pos + btm], stroke);
@@ -505,8 +504,7 @@ fn draw_merger_splitter(
 	{
 		let y = f32::from(p.y);
 		let (a, b) = (Vec2::new(0.0 - dx, y) * 16.0, Vec2::new(1.0 - dx, y) * 16.0);
-		let (a, b) = (dir * a, dir * b);
-		painter.line_segment([pos + a, pos + b], stroke);
+		painter.line_segment([pos + dir * a, pos + dir * b], stroke);
 	}
 }
 
