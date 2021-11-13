@@ -1,245 +1,34 @@
+mod aabb;
+mod circuit_component;
+mod direction;
 mod ic;
+mod point;
+mod point_offset;
+mod relative_aabb;
 mod script;
+mod wire;
 
+pub use aabb::*;
+pub use circuit_component::*;
+pub use direction::*;
 pub use ic::*;
+pub use point::*;
+pub use point_offset::*;
+pub use relative_aabb::*;
+pub use script::*;
+pub use wire::*;
 
-use super::simulator;
 use super::simulator::{
 	ir::IrOp, Component, Graph, GraphIter, GraphNodeHandle, InputType, NexusHandle, OutputType,
 	Port, Property, RemoveError, SetProperty,
 };
 use crate::arena::{Arena, Handle};
-use crate::impl_dyn;
 
-use core::cmp::Ordering;
 use core::fmt;
 
-use core::ops::{Add, Mul};
 use serde::de;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::error::Error;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, Serialize, Deserialize)]
-pub struct Point {
-	pub x: u16,
-	pub y: u16,
-}
-
-impl Point {
-	pub const MIN: Self = Self { x: u16::MIN, y: u16::MIN };
-	pub const MAX: Self = Self { x: u16::MAX, y: u16::MAX };
-
-	pub const fn new(x: u16, y: u16) -> Self {
-		Self { x, y }
-	}
-}
-
-impl PartialOrd for Point {
-	/// The `y` coordinate has precedence over the `x` coordinate.
-	fn partial_cmp(&self, rhs: &Self) -> Option<Ordering> {
-		Some(match self.y.cmp(&rhs.y) {
-			Ordering::Equal => self.x.cmp(&rhs.x),
-			o => o,
-		})
-	}
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct PointOffset {
-	pub x: i8,
-	pub y: i8,
-}
-
-impl PointOffset {
-	pub const MIN: Self = Self { x: i8::MIN, y: i8::MIN };
-	pub const MAX: Self = Self { x: i8::MAX, y: i8::MAX };
-
-	pub const fn new(x: i8, y: i8) -> Self {
-		Self { x, y }
-	}
-}
-
-impl Add<PointOffset> for Point {
-	type Output = Option<Self>;
-
-	fn add(self, rhs: PointOffset) -> Self::Output {
-		let x = i32::from(self.x) + i32::from(rhs.x);
-		let y = i32::from(self.y) + i32::from(rhs.y);
-		x.try_into()
-			.and_then(|x| y.try_into().map(|y| Self { x, y }))
-			.ok()
-	}
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum Direction {
-	Right,
-	Down,
-	Left,
-	Up,
-}
-
-impl Direction {
-	pub fn rotate_clockwise(self) -> Self {
-		match self {
-			Self::Right => Self::Down,
-			Self::Down => Self::Left,
-			Self::Left => Self::Up,
-			Self::Up => Self::Right,
-		}
-	}
-}
-
-impl Mul<PointOffset> for Direction {
-	type Output = PointOffset;
-
-	fn mul(self, rhs: PointOffset) -> Self::Output {
-		match self {
-			Self::Right => PointOffset::new(rhs.x, rhs.y),
-			Self::Down => PointOffset::new(-rhs.y, rhs.x),
-			Self::Left => PointOffset::new(-rhs.x, -rhs.y),
-			Self::Up => PointOffset::new(rhs.y, -rhs.x),
-		}
-	}
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Aabb {
-	min: Point,
-	max: Point,
-}
-
-impl Aabb {
-	pub const ALL: Self = Self { min: Point::MIN, max: Point::MAX };
-
-	/// Create a new AABB containing two points as tightly as possible.
-	pub fn new(p1: Point, p2: Point) -> Self {
-		Self {
-			min: Point::new(p1.x.min(p2.x), p1.y.min(p2.y)),
-			max: Point::new(p1.x.max(p2.x), p1.y.max(p2.y)),
-		}
-	}
-
-	/// Check if this AABB contains a point.
-	pub fn intersect_point(&self, p: Point) -> bool {
-		self.min.x <= p.x && p.x <= self.max.x && self.min.y <= p.y && p.y <= self.max.y
-	}
-}
-#[derive(Clone, Copy, Debug)]
-pub struct RelativeAabb {
-	pub min: PointOffset,
-	pub max: PointOffset,
-}
-
-impl RelativeAabb {
-	/// Create a new AABB containing two points as tightly as possible.
-	pub fn new(p1: PointOffset, p2: PointOffset) -> Self {
-		Self {
-			min: PointOffset { x: p1.x.min(p2.x), y: p1.y.min(p2.y) },
-			max: PointOffset { x: p1.x.max(p2.x), y: p1.y.max(p2.y) },
-		}
-	}
-
-	/// Create an AABB containing both this AABB and the given point.
-	pub fn expand(mut self, p: PointOffset) -> Self {
-		self.min.x = self.min.x.min(p.x);
-		self.min.y = self.min.y.min(p.y);
-		self.max.x = self.max.x.max(p.x);
-		self.max.y = self.max.y.max(p.y);
-		self
-	}
-}
-
-impl Mul<RelativeAabb> for Direction {
-	type Output = RelativeAabb;
-
-	fn mul(self, rhs: RelativeAabb) -> Self::Output {
-		RelativeAabb::new(self * rhs.min, self * rhs.max)
-	}
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Wire {
-	pub from: Point,
-	pub to: Point,
-}
-
-impl Wire {
-	pub fn new(from: Point, to: Point) -> Self {
-		Self { from, to }
-	}
-
-	/// Check if this wire intersects with a point.
-	pub fn intersect_point(&self, point: Point) -> bool {
-		// Check if the point is inside the AABB of the wire.
-		if !self.aabb().intersect_point(point) {
-			return false;
-		}
-
-		let (x1, y1) = (i32::from(self.from.x), i32::from(self.from.y));
-		let (x2, y2) = (i32::from(self.to.x), i32::from(self.to.y));
-		let (xp, yp) = (i32::from(point.x), i32::from(point.y));
-		// Make start of line (x1, y1) the origin so b = 0
-		let (dx, dy) = (x2 - x1, y2 - y1);
-		let (dxp, dyp) = (xp - x1, yp - y1);
-		// y = ax <=> y = dy / dx * x <=> y * dx = x * dx
-		dx * dyp == dy * dxp
-	}
-
-	/// Return the AABB enclosing this wire.
-	pub fn aabb(&self) -> Aabb {
-		Aabb::new(self.from, self.to)
-	}
-}
-
-/// A component with fixed input & output locations
-#[typetag::serde]
-pub trait CircuitComponent
-where
-	Self: simulator::Component,
-{
-	/// All the inputs of this component.
-	fn inputs(&self) -> Box<[PointOffset]>;
-
-	/// All the outputs of this component.
-	fn outputs(&self) -> Box<[PointOffset]>;
-
-	fn external_input(&self) -> Option<usize> {
-		None
-	}
-
-	fn external_output(&self) -> Option<usize> {
-		None
-	}
-
-	fn aabb(&self, direction: Direction) -> RelativeAabb;
-}
-
-impl_dyn! {
-	Component for Box<dyn CircuitComponent> {
-		ref label() -> Option<&str>;
-		ref input_count() -> usize;
-		ref input_type(input: usize) -> Option<InputType>;
-		ref output_count() -> usize;
-		ref output_type(output: usize) -> Option<OutputType>;
-		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
-		ref properties() -> Box<[Property]>;
-		mut set_property(name: &str, value: SetProperty) -> Result<(), Box<dyn Error>>;
-	}
-}
-
-impl_dyn! {
-	CircuitComponent for Box<dyn CircuitComponent> {
-		ref inputs() -> Box<[PointOffset]>;
-		ref outputs() -> Box<[PointOffset]>;
-		ref external_input() -> Option<usize>;
-		ref external_output() -> Option<usize>;
-		ref aabb(dir: Direction) -> RelativeAabb;
-		ref typetag_name() -> &'static str;
-		ref typetag_deserialize() -> ();
-	}
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WireHandle(Handle);
@@ -262,8 +51,6 @@ where
 	C: CircuitComponent,
 {
 	pub fn add_wire(&mut self, wire: Wire) -> WireHandle {
-		let Aabb { min: _, max: _ } = wire.aabb();
-
 		// Add wire to existing nexus if it connects with one.
 		// Otherwise create a new nexus and add the wire to it.
 		let mut nexus = None;
@@ -300,10 +87,7 @@ where
 	}
 
 	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), &'static str> {
-		let (wire, nexus) = self.wires.remove(handle.0).ok_or("invalid handle")?;
-
-		// Remove from zones.
-		let Aabb { min: _, max: _ } = wire.aabb();
+		let (_, nexus) = self.wires.remove(handle.0).ok_or("invalid handle")?;
 
 		// Remove from nexus.
 		let list = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
@@ -602,10 +386,11 @@ where
 #[cfg(test)]
 mod test {
 	use super::*;
-	use core::num::NonZeroU8;
-	use simulator::{
-		AndGate as And, In, NonZeroOneU8, NotGate as Not, OrGate as Or, Out, XorGate as Xor,
+	use crate::simulator::{
+		ir::interpreter, AndGate as And, In, NonZeroOneU8, NotGate as Not, OrGate as Or, Out,
+		XorGate as Xor,
 	};
+	use core::num::NonZeroU8;
 
 	/// ```
 	/// i0 --+-------v
@@ -686,7 +471,7 @@ mod test {
 		let (ir, _) = circuit.generate_ir();
 		let (a, b) = (0b1100, 0b0110);
 		let mut out = [0; 2];
-		simulator::ir::interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
+		interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
 		assert_eq!(out, [a ^ b; 2]);
 	}
 }
