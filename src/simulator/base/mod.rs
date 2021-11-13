@@ -180,13 +180,11 @@ macro_rules! gate {
 		pub struct $name {
 			/// The amount of inputs this gate has. Must be at least 2.
 			pub inputs: NonZeroOneU8,
-			/// The size of each input and the output.
-			bits: NonZeroU8,
 		}
 
 		impl $name {
-			pub fn new(inputs: NonZeroOneU8, bits: NonZeroU8) -> Self {
-				Self { inputs, bits }
+			pub fn new(inputs: NonZeroOneU8) -> Self {
+				Self { inputs }
 			}
 		}
 
@@ -196,7 +194,8 @@ macro_rules! gate {
 			}
 
 			fn input_type(&self, input: usize) -> Option<InputType> {
-				(input < self.input_count()).then(|| InputType { bits: self.bits })
+				(input < self.input_count())
+					.then(|| InputType { bits: NonZeroU8::new(32).unwrap() })
 			}
 
 			fn output_count(&self) -> usize {
@@ -204,7 +203,8 @@ macro_rules! gate {
 			}
 
 			fn output_type(&self, output: usize) -> Option<OutputType> {
-				(output < self.output_count()).then(|| OutputType { bits: self.bits })
+				(output < self.output_count())
+					.then(|| OutputType { bits: NonZeroU8::new(32).unwrap() })
 			}
 
 			fn generate_ir(
@@ -253,14 +253,11 @@ gate!(OrGate, Or);
 gate!(XorGate, Xor);
 
 #[derive(Serialize, Deserialize)]
-pub struct NotGate {
-	/// The size of each input and the output.
-	bits: NonZeroU8,
-}
+pub struct NotGate {}
 
 impl NotGate {
-	pub fn new(bits: NonZeroU8) -> Self {
-		Self { bits }
+	pub fn new() -> Self {
+		Self {}
 	}
 }
 
@@ -270,7 +267,7 @@ impl Component for NotGate {
 	}
 
 	fn input_type(&self, input: usize) -> Option<InputType> {
-		(input < self.input_count()).then(|| InputType { bits: self.bits })
+		(input < self.input_count()).then(|| InputType { bits: NonZeroU8::new(32).unwrap() })
 	}
 
 	fn output_count(&self) -> usize {
@@ -278,7 +275,7 @@ impl Component for NotGate {
 	}
 
 	fn output_type(&self, output: usize) -> Option<OutputType> {
-		(output < self.output_count()).then(|| OutputType { bits: self.bits })
+		(output < self.output_count()).then(|| OutputType { bits: NonZeroU8::new(32).unwrap() })
 	}
 
 	fn generate_ir(
@@ -441,19 +438,13 @@ impl Component for Out {
 
 #[derive(Serialize, Deserialize)]
 pub struct Splitter {
-	pub bits: NonZeroU8,
 	/// Mask of bits to output from input.
 	outputs: Vec<NonZeroUsize>,
 }
 
 impl Splitter {
-	pub fn new(bits: NonZeroU8) -> Self {
-		Self {
-			bits,
-			outputs: (0..bits.get())
-				.map(|i| NonZeroUsize::new(1 << i).unwrap())
-				.collect(),
-		}
+	pub fn new() -> Self {
+		Self { outputs: [NonZeroUsize::new(1).unwrap()].into() }
 	}
 }
 
@@ -463,7 +454,7 @@ impl Component for Splitter {
 	}
 
 	fn input_type(&self, index: usize) -> Option<InputType> {
-		(index < 1).then(|| InputType { bits: self.bits })
+		(index < 1).then(|| InputType { bits: NonZeroU8::new(32).unwrap() })
 	}
 
 	fn output_count(&self) -> usize {
@@ -508,13 +499,9 @@ impl Component for Splitter {
 	}
 
 	fn properties(&self) -> Box<[Property]> {
-		let bits = PropertyValue::Int { value: self.bits.get().into(), range: 1..=32 };
 		let outputs =
 			PropertyValue::Int { value: self.outputs.len().try_into().unwrap(), range: 1..=32 };
-		let mut v = Vec::from([
-			Property::new("bits", bits),
-			Property::new("outputs", outputs),
-		]);
+		let mut v = Vec::from([Property::new("outputs", outputs)]);
 		for (i, o) in self.outputs.iter().enumerate() {
 			let mask = PropertyValue::Mask { value: o.get().into() };
 			v.push(Property::new(format!("output {}", i), mask));
@@ -524,13 +511,6 @@ impl Component for Splitter {
 
 	fn set_property(&mut self, name: &str, value: SetProperty) -> Result<(), Box<dyn Error>> {
 		match name {
-			"bits" => {
-				let v = value.as_int().ok_or("expected integer")?;
-				(1..=32)
-					.contains(&v)
-					.then(|| self.bits = NonZeroU8::new(v.try_into().unwrap()).unwrap())
-					.ok_or("integer out of range")?;
-			}
 			"outputs" => {
 				let v = value.as_int().ok_or("expected integer")?;
 				let mut i = self.outputs.len();
@@ -761,32 +741,13 @@ mod test {
 	fn manual_xor() {
 		let mut ir = Vec::new();
 
-		AndGate::new(NonZeroOneU8::new(2).unwrap(), NonZeroU8::new(1).unwrap()).generate_ir(
-			&[0, 1],
-			&[2],
-			&mut |op| ir.push(op),
-			0,
-		);
-		OrGate::new(NonZeroOneU8::new(2).unwrap(), NonZeroU8::new(1).unwrap()).generate_ir(
-			&[0, 1],
-			&[3],
-			&mut |op| ir.push(op),
-			0,
-		);
-		NotGate::new(NonZeroU8::new(1).unwrap()).generate_ir(&[2], &[4], &mut |op| ir.push(op), 0);
-		AndGate::new(NonZeroOneU8::new(2).unwrap(), NonZeroU8::new(1).unwrap()).generate_ir(
-			&[3, 4],
-			&[5],
-			&mut |op| ir.push(op),
-			0,
-		);
+		let inputs = NonZeroOneU8::new(2).unwrap();
+		AndGate::new(inputs).generate_ir(&[0, 1], &[2], &mut |op| ir.push(op), 0);
+		OrGate::new(inputs).generate_ir(&[0, 1], &[3], &mut |op| ir.push(op), 0);
+		NotGate::new().generate_ir(&[2], &[4], &mut |op| ir.push(op), 0);
+		AndGate::new(inputs).generate_ir(&[3, 4], &[5], &mut |op| ir.push(op), 0);
 
-		XorGate::new(NonZeroOneU8::new(2).unwrap(), NonZeroU8::new(1).unwrap()).generate_ir(
-			&[0, 1],
-			&[6],
-			&mut |op| ir.push(op),
-			0,
-		);
+		XorGate::new(inputs).generate_ir(&[0, 1], &[6], &mut |op| ir.push(op), 0);
 
 		let (a, b) = (0b1100, 0b0110);
 		let mut mem = [a, b, 0, 0, 0, 0, 0];

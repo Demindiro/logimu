@@ -34,11 +34,11 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 	}
 	use simulator::*;
 	&[
-		("and", || Box::new(AndGate::new(b(), a()))),
-		("or", || Box::new(OrGate::new(b(), a()))),
-		("not", || Box::new(NotGate::new(a()))),
-		("xor", || Box::new(XorGate::new(b(), a()))),
-		("splitter", || Box::new(Splitter::new(a()))),
+		("and", || Box::new(AndGate::new(b()))),
+		("or", || Box::new(OrGate::new(b()))),
+		("not", || Box::new(NotGate::new())),
+		("xor", || Box::new(XorGate::new(b()))),
+		("splitter", || Box::new(Splitter::new())),
 		("merger", || Box::new(Merger::new(a()))),
 		("constant", || Box::new(Constant::new(a(), 0))),
 		("rom", || Box::new(ReadOnlyMemory::default())),

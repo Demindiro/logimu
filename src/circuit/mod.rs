@@ -425,12 +425,12 @@ mod test {
 		let inputs = NonZeroOneU8::new(2).unwrap();
 		let i0 = Box::new(In::new("I0", bits, 0));
 		let i1 = Box::new(In::new("I1", bits, 1));
-		let l0 = Box::new(And::new(inputs, bits));
-		let l1 = Box::new(Not::new(bits));
-		let r0 = Box::new(Or::new(inputs, bits));
-		let lr = Box::new(And::new(inputs, bits));
+		let l0 = Box::new(And::new(inputs));
+		let l1 = Box::new(Not::new());
+		let r0 = Box::new(Or::new(inputs));
+		let lr = Box::new(And::new(inputs));
 		let o0 = Box::new(Out::new("O0", bits, 0));
-		let cp = Box::new(Xor::new(inputs, bits));
+		let cp = Box::new(Xor::new(inputs));
 		let o1 = Box::new(Out::new("O1", bits, 1));
 
 		// Inputs
