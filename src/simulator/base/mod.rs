@@ -14,6 +14,11 @@ use std::error::Error;
 
 /// A single component with one or more inputs and outputs.
 pub trait Component {
+	/// The label attached to this component.
+	fn label(&self) -> Option<&str> {
+		None
+	}
+
 	/// The amount of inputs.
 	fn input_count(&self) -> usize;
 
@@ -311,6 +316,10 @@ impl In {
 }
 
 impl Component for In {
+	fn label(&self) -> Option<&str> {
+		(!self.name.is_empty()).then(|| &*self.name)
+	}
+
 	fn input_count(&self) -> usize {
 		0
 	}
@@ -377,6 +386,10 @@ impl Out {
 }
 
 impl Component for Out {
+	fn label(&self) -> Option<&str> {
+		(!self.name.is_empty()).then(|| &*self.name)
+	}
+
 	fn input_count(&self) -> usize {
 		1
 	}

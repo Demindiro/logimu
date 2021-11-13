@@ -3,10 +3,14 @@ mod dialog;
 mod file;
 mod gates;
 mod ic;
+mod log;
+mod script;
 
 use component::*;
 use dialog::Dialog;
 use file::OpenDialog;
+use log::*;
+use script::*;
 
 use crate::circuit;
 use crate::circuit::{Circuit, CircuitComponent, Ic, LoadError, WireHandle};
@@ -75,6 +79,11 @@ pub struct App {
 	property_value_buffer: Option<(Box<str>, String)>,
 
 	file_path: Box<Path>,
+
+	script_editor: ScriptEditor,
+	log: Log,
+
+	logged_parse_error: bool,
 }
 
 impl App {
@@ -100,6 +109,11 @@ impl App {
 			property_value_buffer: Default::default(),
 
 			file_path: PathBuf::new().into(),
+
+			script_editor: Default::default(),
+			log: Default::default(),
+
+			logged_parse_error: false,
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
@@ -187,6 +201,9 @@ impl epi::App for App {
 			}
 		}
 
+		self.script_editor.show(ctx, &mut self.circuit);
+		self.log.show(ctx);
+
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -202,6 +219,44 @@ impl epi::App for App {
 					save |= ui.button("Save").clicked();
 					if ui.button("Save as").clicked() {}
 				});
+				self.script_editor.open |= ui.button("Script").clicked();
+				menu::menu(ui, "Test", |ui| {
+					let run_all = ui.button("All").clicked();
+					ui.separator();
+					match self.circuit.tests() {
+						Ok(t) => {
+							for t in t {
+								let mut debug = String::default();
+								if ui.button(t.name()).clicked() || run_all {
+									let res = t.run(
+										&mut self.memory,
+										&mut self.inputs,
+										&mut self.outputs,
+										&mut debug,
+									);
+									(!debug.is_empty()).then(|| self.log.push(Tag::Debug, debug));
+									match res {
+										Ok(()) => self.log.push(
+											Tag::Success,
+											format!("Test '{}' passed!", t.name()),
+										),
+										Err(e) => self.log.push(Tag::Error, e.to_string()),
+									}
+									self.log.open = true;
+								}
+								self.logged_parse_error = false;
+							}
+						}
+						Err(e) => {
+							if !self.logged_parse_error {
+								self.log.open = true;
+								self.log.push(Tag::Error, e.to_string());
+								self.logged_parse_error = true;
+							}
+						}
+					}
+				});
+				self.log.open |= ui.button("Log").clicked();
 			});
 		});
 
