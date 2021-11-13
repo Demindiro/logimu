@@ -13,10 +13,10 @@ use crate::impl_dyn;
 
 use core::cmp::Ordering;
 use core::fmt;
-use core::mem;
+
 use core::ops::{Add, Mul};
 use serde::de;
-use serde::ser::{SerializeSeq, SerializeStruct, SerializeTuple};
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 
@@ -116,8 +116,8 @@ impl Aabb {
 	/// Create a new AABB containing two points as tightly as possible.
 	pub fn new(p1: Point, p2: Point) -> Self {
 		Self {
-			min: Point { x: p1.x.min(p2.x), y: p1.y.min(p2.y) },
-			max: Point { x: p1.x.max(p2.x), y: p1.y.max(p2.y) },
+			min: Point::new(p1.x.min(p2.x), p1.y.min(p2.y)),
+			max: Point::new(p1.x.max(p2.x), p1.y.max(p2.y)),
 		}
 	}
 
@@ -261,12 +261,8 @@ impl<C> Circuit<C>
 where
 	C: CircuitComponent,
 {
-	pub fn new() -> Self {
-		Self::default()
-	}
-
 	pub fn add_wire(&mut self, wire: Wire) -> WireHandle {
-		let Aabb { min, max } = wire.aabb();
+		let Aabb { min: _, max: _ } = wire.aabb();
 
 		// Add wire to existing nexus if it connects with one.
 		// Otherwise create a new nexus and add the wire to it.
@@ -307,7 +303,7 @@ where
 		let (wire, nexus) = self.wires.remove(handle.0).ok_or("invalid handle")?;
 
 		// Remove from zones.
-		let Aabb { min, max } = wire.aabb();
+		let Aabb { min: _, max: _ } = wire.aabb();
 
 		// Remove from nexus.
 		let list = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
@@ -358,7 +354,12 @@ where
 	}
 
 	pub fn components(&self, aabb: Aabb) -> ComponentIter<C> {
-		ComponentIter { iter: self.graph.nodes(), circuit: self, aabb, index: 0 }
+		ComponentIter {
+			iter: self.graph.nodes(),
+			_circuit: self,
+			_aabb: aabb,
+			index: 0,
+		}
 	}
 
 	// TODO make non-mutable
@@ -399,7 +400,7 @@ where
 		}
 	}
 
-	fn connect_wire(&mut self, wire: Option<WireHandle>) {
+	fn connect_wire(&mut self, _wire: Option<WireHandle>) {
 		// TODO iterating all wires is wasteful.
 		// Connect components using wire information
 		for (_, (w, nexus)) in self.wires.iter() {
@@ -462,7 +463,7 @@ where
 				.collect::<Box<_>>(),
 		)?;
 		if !self.script_source.is_empty() {
-			circuit.serialize_field("script", &self.script_source);
+			circuit.serialize_field("script", &self.script_source)?;
 		}
 		circuit.end()
 	}
@@ -577,8 +578,8 @@ where
 {
 	// TODO avoid iter, use zones
 	iter: GraphIter<'a, C, (Point, Direction)>,
-	circuit: &'a Circuit<C>,
-	aabb: Aabb,
+	_circuit: &'a Circuit<C>,
+	_aabb: Aabb,
 	index: usize,
 }
 

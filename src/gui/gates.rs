@@ -1,12 +1,11 @@
 use super::ComponentPlacer;
 use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
-use crate::simulator;
+
 use crate::simulator::*;
 use core::num::NonZeroU8;
-use eframe::egui::paint::{CircleShape, Mesh, RectShape, Vertex};
+use eframe::egui::paint::{CircleShape, Mesh, RectShape};
 use eframe::egui::{Align2, Color32, Painter, Pos2, Rect, Shape, Stroke, TextStyle, Vec2};
 
-const IN: &[PointOffset] = &[PointOffset::new(-1, -1), PointOffset::new(-1, 1)];
 const IN_NOT: &[PointOffset] = &[PointOffset::new(-1, 0)];
 const OUT: &[PointOffset] = &[PointOffset::new(1, 0)];
 const CENTER: &[PointOffset] = &[PointOffset::new(0, 0)];
@@ -480,8 +479,8 @@ fn draw_merger_splitter(
 	painter: &Painter,
 	pos: Pos2,
 	dir: Direction,
-	inputs: &[usize],
-	outputs: &[usize],
+	_inputs: &[usize],
+	_outputs: &[usize],
 	in_pos: &[PointOffset],
 	out_pos: &[PointOffset],
 ) {

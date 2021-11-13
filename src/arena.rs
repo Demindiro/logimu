@@ -21,13 +21,6 @@ impl<T> Entry<T> {
 			_ => None,
 		}
 	}
-
-	fn into_occupied(self) -> Option<T> {
-		match self {
-			Self::Occupied { value } => Some(value),
-			_ => None,
-		}
-	}
 }
 
 pub struct Arena<T> {

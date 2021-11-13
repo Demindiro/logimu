@@ -1,4 +1,3 @@
-use crate::impl_dyn;
 use core::borrow::Borrow;
 use core::cell::Cell;
 use core::cmp::Ordering;
@@ -85,6 +84,7 @@ macro_rules! op {
 }
 
 impl Value {
+	#[allow(dead_code)]
 	fn type_name(&self) -> &'static str {
 		match self {
 			Self::None => "none",
@@ -108,6 +108,7 @@ impl Value {
 		}
 	}
 
+	#[allow(dead_code)]
 	pub fn as_str(&self) -> Option<&str> {
 		match self {
 			Self::Str(s) => Some(&**s),
@@ -282,6 +283,7 @@ impl SExpr {
 					args.push(match &*s {
 						"true" => Arg::Bool(true),
 						"false" => Arg::Bool(false),
+						"none" => Arg::None,
 						_ => Arg::Symbol(s.into()),
 					});
 				}

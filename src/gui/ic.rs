@@ -1,12 +1,7 @@
 use super::*;
-use crate::circuit::{Direction, PointOffset};
-use crate::simulator::{ir, Component};
+use crate::circuit::Direction;
+
 use eframe::egui::{paint::RectShape, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
-use serde::de::{Deserialize, Deserializer, Error, Visitor};
-use serde::ser::{Serialize, Serializer};
-use std::fmt;
-use std::fs::File;
-use std::path::Path;
 
 #[typetag::serde]
 impl ComponentPlacer for Ic {
@@ -19,8 +14,8 @@ impl ComponentPlacer for Ic {
 		painter: &Painter,
 		position: Pos2,
 		direction: Direction,
-		inputs: &[usize],
-		outputs: &[usize],
+		_inputs: &[usize],
+		_outputs: &[usize],
 	) {
 		let aabb = self.aabb(direction);
 		let min = position + Vec2::new(aabb.min.x.into(), aabb.min.y.into()) * 16.0;

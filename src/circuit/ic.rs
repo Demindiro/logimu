@@ -1,7 +1,7 @@
 use super::*;
 use crate::simulator::ir;
 use core::cmp::Ordering;
-use serde::de::{Deserializer, Visitor};
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap};
 use std::error::Error;
@@ -203,7 +203,7 @@ impl Component for Ic {
 		Box::default()
 	}
 
-	fn set_property(&mut self, name: &str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+	fn set_property(&mut self, _name: &str, _value: SetProperty) -> Result<(), Box<dyn Error>> {
 		Err("no properties".into())
 	}
 }

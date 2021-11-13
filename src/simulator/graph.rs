@@ -1,7 +1,6 @@
 use super::*;
 use crate::arena::{Arena, Handle};
 use core::iter;
-use core::mem;
 
 /// A graph of connected components
 pub struct Graph<C, Uc, Un>
@@ -241,7 +240,8 @@ where
 		}
 	}
 
-	pub fn disconnect(&mut self, port: Port) -> Result<(), ConnectError> {
+	#[allow(dead_code)]
+	pub fn disconnect(&mut self, _port: Port) -> Result<(), ConnectError> {
 		todo!()
 	}
 
@@ -327,13 +327,11 @@ where
 
 #[derive(Clone, Copy, Debug)]
 pub enum RemoveError {
-	NotConnected,
 	InvalidNode,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum RemoveNexusError {
-	NotConnected,
 	InvalidNexus,
 }
 

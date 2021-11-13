@@ -13,9 +13,9 @@ use log::*;
 use script::*;
 
 use crate::circuit;
-use crate::circuit::{Circuit, CircuitComponent, Ic, LoadError, WireHandle};
+use crate::circuit::{CircuitComponent, Ic, WireHandle};
 use crate::simulator;
-use crate::simulator::ir::IrOp;
+
 use crate::simulator::{GraphNodeHandle, Property, PropertyValue, SetProperty};
 
 use core::any::TypeId;
@@ -24,7 +24,6 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 	fn a() -> core::num::NonZeroU8 {
@@ -69,8 +68,6 @@ pub struct App {
 	selected_components: Vec<GraphNodeHandle>,
 	selected_wires: Vec<WireHandle>,
 
-	current_bit_width: u8,
-
 	inputs: Vec<usize>,
 	outputs: Vec<usize>,
 	memory: Box<[usize]>,
@@ -88,7 +85,6 @@ pub struct App {
 
 impl App {
 	pub fn new() -> Self {
-		use crate::simulator::*;
 		let mut s = Self {
 			dialog: None,
 			component: None,
@@ -99,8 +95,6 @@ impl App {
 
 			selected_components: Default::default(),
 			selected_wires: Default::default(),
-
-			current_bit_width: Default::default(),
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
@@ -261,8 +255,16 @@ impl epi::App for App {
 		});
 
 		if save {
-			let e = self.save_to_file(None);
-			dbg!(e);
+			match self.save_to_file(None) {
+				Ok(_) => self.log.push(
+					Tag::Debug,
+					format!("Saved circuit to {:?}", &self.file_path),
+				),
+				Err(e) => self.log.push(
+					Tag::Error,
+					format!("Failed to save circuit to {:?}: {:?}", &self.file_path, e),
+				),
+			}
 		}
 
 		if let Some(dialog) = self.dialog.as_mut() {
@@ -422,7 +424,7 @@ impl epi::App for App {
 		CentralPanel::default().show(ctx, |ui| {
 			use epaint::*;
 			let rect = ui.max_rect();
-			let paint = ui.painter_at(rect);
+			let _paint = ui.painter_at(rect);
 			let paint = ui.painter();
 			for y in (rect.min.y as u16..rect.max.y as u16).step_by(16) {
 				for x in (rect.min.x as u16..rect.max.x as u16).step_by(16) {
@@ -563,8 +565,7 @@ impl epi::App for App {
 						// pressed if the secondary was pressed and then released at the same
 						// time.
 						if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
-							self.circuit
-								.add_wire(circuit::Wire { from: start, to: point });
+							self.circuit.add_wire(circuit::Wire::new(start, point));
 							self.wire_start = None;
 							self.needs_update = true;
 						}
@@ -615,7 +616,7 @@ fn mask_to_string(mut mask: usize) -> String {
 }
 
 /// Convert a human-readable mask string to an actual mask.
-fn string_to_mask(mut s: &str) -> Result<usize, String> {
+fn string_to_mask(s: &str) -> Result<usize, String> {
 	let mut mask = 0;
 	for r in s.split(',').map(str::trim) {
 		if let Some((min, max)) = r.split_once('-') {

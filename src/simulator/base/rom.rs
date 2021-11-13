@@ -38,7 +38,7 @@ impl Component for ReadOnlyMemory {
 		inputs: &[usize],
 		outputs: &[usize],
 		outf: &mut dyn FnMut(IrOp),
-		memory_size: usize,
+		_memory_size: usize,
 	) -> usize {
 		let (address, out) = (inputs[0], outputs[0]);
 		if address != usize::MAX && out != usize::MAX {

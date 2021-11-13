@@ -8,7 +8,7 @@ use core::fmt;
 use core::num::{NonZeroU8, NonZeroUsize};
 use core::ops::RangeInclusive;
 use serde::de;
-use serde::ser::SerializeStruct;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 
@@ -296,7 +296,7 @@ impl Component for NotGate {
 		Box::default()
 	}
 
-	fn set_property(&mut self, name: &str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+	fn set_property(&mut self, _name: &str, _value: SetProperty) -> Result<(), Box<dyn Error>> {
 		Err("no properties".into())
 	}
 }
