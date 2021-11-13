@@ -198,11 +198,15 @@ macro_rules! gate {
 				_: usize,
 			) -> usize {
 				assert!(outputs.len() < 2);
-				if let Some(&output) = outputs.first() {
-					let mut it = inputs.iter().filter(|a| **a != usize::MAX);
-					it.next()
-						.map(|&a| out(IrOp::Andi { a, i: usize::MAX, out: output }));
-					it.for_each(|&a| out(IrOp::$op { a, b: output, out: output }));
+				let mut it = inputs.iter().filter(|a| **a != usize::MAX);
+				if let (Some(&output), Some(mut a)) = (outputs.first(), it.next().copied()) {
+					let mut cpy = true;
+					while let Some(&b) = it.next() {
+						out(IrOp::$op { a, b, out: output });
+						a = output;
+						cpy = false;
+					}
+					cpy.then(|| out(IrOp::Copy { a, out: output }));
 				}
 				0
 			}
