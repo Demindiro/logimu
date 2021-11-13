@@ -78,8 +78,8 @@ where
 	}
 
 	pub fn add(&mut self, component: C, userdata: Uc) -> GraphNodeHandle {
-		let ic = component.input_count();
-		let oc = component.output_count();
+		let ic = component.inputs().len();
+		let oc = component.outputs().len();
 		let node = Node {
 			component,
 			inputs: iter::repeat(None).take(ic).collect(),

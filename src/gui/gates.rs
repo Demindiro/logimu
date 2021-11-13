@@ -14,7 +14,7 @@ macro_rules! impl_cc {
 	($name:ident, $in:expr, $out:expr, (($min_x:literal, $min_y:literal), ($max_x:literal, $max_y:literal))) => {
 		#[typetag::serde]
 		impl CircuitComponent for $name {
-			fn inputs(&self) -> Box<[PointOffset]> {
+			fn input_points(&self) -> Box<[PointOffset]> {
 				let i = i16::from(self.inputs.get());
 				(-i / 2..0)
 					.chain((i % 2 != 0).then(|| 0))
@@ -23,7 +23,7 @@ macro_rules! impl_cc {
 					.collect()
 			}
 
-			fn outputs(&self) -> Box<[PointOffset]> {
+			fn output_points(&self) -> Box<[PointOffset]> {
 				$out.into()
 			}
 
@@ -201,11 +201,11 @@ impl ComponentPlacer for XorGate {
 
 #[typetag::serde]
 impl CircuitComponent for NotGate {
-	fn inputs(&self) -> Box<[PointOffset]> {
+	fn input_points(&self) -> Box<[PointOffset]> {
 		IN_NOT.into()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
+	fn output_points(&self) -> Box<[PointOffset]> {
 		OUT.into()
 	}
 
@@ -242,11 +242,11 @@ impl ComponentPlacer for NotGate {
 
 #[typetag::serde]
 impl CircuitComponent for In {
-	fn inputs(&self) -> Box<[PointOffset]> {
+	fn input_points(&self) -> Box<[PointOffset]> {
 		[].into()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
+	fn output_points(&self) -> Box<[PointOffset]> {
 		CENTER.into()
 	}
 
@@ -279,11 +279,11 @@ impl ComponentPlacer for In {
 
 #[typetag::serde]
 impl CircuitComponent for Out {
-	fn inputs(&self) -> Box<[PointOffset]> {
+	fn input_points(&self) -> Box<[PointOffset]> {
 		CENTER.into()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
+	fn output_points(&self) -> Box<[PointOffset]> {
 		[].into()
 	}
 
@@ -380,18 +380,18 @@ fn draw_in_out(
 
 #[typetag::serde]
 impl CircuitComponent for Splitter {
-	fn inputs(&self) -> Box<[PointOffset]> {
+	fn input_points(&self) -> Box<[PointOffset]> {
 		IN_NOT.into()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
-		(0..self.output_count().try_into().unwrap())
+	fn output_points(&self) -> Box<[PointOffset]> {
+		(0..self.outputs().len().try_into().unwrap())
 			.map(|y| PointOffset::new(1, y))
 			.collect()
 	}
 
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
-		aabb_merger_splitter(&*self.inputs(), &*self.outputs(), dir)
+		aabb_merger_splitter(&*self.input_points(), &*self.output_points(), dir)
 	}
 }
 
@@ -415,26 +415,26 @@ impl ComponentPlacer for Splitter {
 			dir,
 			inputs,
 			outputs,
-			&*self.inputs(),
-			&*self.outputs(),
+			&*self.input_points(),
+			&*self.output_points(),
 		)
 	}
 }
 
 #[typetag::serde]
 impl CircuitComponent for Merger {
-	fn inputs(&self) -> Box<[PointOffset]> {
-		(0..self.input_count().try_into().unwrap())
+	fn input_points(&self) -> Box<[PointOffset]> {
+		(0..self.inputs().len().try_into().unwrap())
 			.map(|y| PointOffset::new(-1, y))
 			.collect()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
+	fn output_points(&self) -> Box<[PointOffset]> {
 		OUT.into()
 	}
 
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
-		aabb_merger_splitter(&*self.inputs(), &*self.outputs(), dir)
+		aabb_merger_splitter(&*self.input_points(), &*self.output_points(), dir)
 	}
 }
 
@@ -458,8 +458,8 @@ impl ComponentPlacer for Merger {
 			dir,
 			inputs,
 			outputs,
-			&*self.inputs(),
-			&*self.outputs(),
+			&*self.input_points(),
+			&*self.output_points(),
 		)
 	}
 }
@@ -509,11 +509,11 @@ fn draw_merger_splitter(
 
 #[typetag::serde]
 impl CircuitComponent for Constant {
-	fn inputs(&self) -> Box<[PointOffset]> {
+	fn input_points(&self) -> Box<[PointOffset]> {
 		[].into()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
+	fn output_points(&self) -> Box<[PointOffset]> {
 		CENTER.into()
 	}
 
@@ -542,11 +542,11 @@ impl ComponentPlacer for Constant {
 
 #[typetag::serde]
 impl CircuitComponent for ReadOnlyMemory {
-	fn inputs(&self) -> Box<[PointOffset]> {
+	fn input_points(&self) -> Box<[PointOffset]> {
 		[PointOffset::new(-4, 0)].into()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
+	fn output_points(&self) -> Box<[PointOffset]> {
 		[PointOffset::new(4, 0)].into()
 	}
 

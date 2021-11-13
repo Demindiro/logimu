@@ -19,17 +19,11 @@ pub trait Component {
 		None
 	}
 
-	/// The amount of inputs.
-	fn input_count(&self) -> usize;
+	/// The types of inputs.
+	fn inputs(&self) -> Box<[InputType]>;
 
-	/// The type of a given input.
-	fn input_type(&self, input: usize) -> Option<InputType>;
-
-	/// The amount of outputs.
-	fn output_count(&self) -> usize;
-
-	/// The type of a given output.
-	fn output_type(&self, output: usize) -> Option<OutputType>;
+	/// The types of outputs.
+	fn outputs(&self) -> Box<[OutputType]>;
 
 	/// Generate IR for this component.
 	fn generate_ir(
@@ -99,10 +93,8 @@ impl SetProperty {
 
 impl_dyn! {
 	Component for Box<dyn Component> {
-		ref input_count() -> usize;
-		ref input_type(input: usize) -> Option<InputType>;
-		ref output_count() -> usize;
-		ref output_type(output: usize) -> Option<OutputType>;
+		ref inputs() -> Box<[InputType]>;
+		ref outputs() -> Box<[OutputType]>;
 		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 		ref properties() -> Box<[Property]>;
 		mut set_property(name: &str, value: SetProperty) -> Result<(), Box<dyn Error>>;
@@ -189,22 +181,13 @@ macro_rules! gate {
 		}
 
 		impl Component for $name {
-			fn input_count(&self) -> usize {
-				self.inputs.get().into()
+			fn inputs(&self) -> Box<[InputType]> {
+				let bits = NonZeroU8::new(32).unwrap();
+				(0..self.inputs.get()).map(|_| InputType { bits }).collect()
 			}
 
-			fn input_type(&self, input: usize) -> Option<InputType> {
-				(input < self.input_count())
-					.then(|| InputType { bits: NonZeroU8::new(32).unwrap() })
-			}
-
-			fn output_count(&self) -> usize {
-				1
-			}
-
-			fn output_type(&self, output: usize) -> Option<OutputType> {
-				(output < self.output_count())
-					.then(|| OutputType { bits: NonZeroU8::new(32).unwrap() })
+			fn outputs(&self) -> Box<[OutputType]> {
+				[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 			}
 
 			fn generate_ir(
@@ -262,20 +245,12 @@ impl NotGate {
 }
 
 impl Component for NotGate {
-	fn input_count(&self) -> usize {
-		1
+	fn inputs(&self) -> Box<[InputType]> {
+		[InputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
-	fn input_type(&self, input: usize) -> Option<InputType> {
-		(input < self.input_count()).then(|| InputType { bits: NonZeroU8::new(32).unwrap() })
-	}
-
-	fn output_count(&self) -> usize {
-		1
-	}
-
-	fn output_type(&self, output: usize) -> Option<OutputType> {
-		(output < self.output_count()).then(|| OutputType { bits: NonZeroU8::new(32).unwrap() })
+	fn outputs(&self) -> Box<[OutputType]> {
+		[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
 	fn generate_ir(
@@ -317,20 +292,12 @@ impl Component for In {
 		(!self.name.is_empty()).then(|| &*self.name)
 	}
 
-	fn input_count(&self) -> usize {
-		0
+	fn inputs(&self) -> Box<[InputType]> {
+		[].into()
 	}
 
-	fn input_type(&self, _: usize) -> Option<InputType> {
-		None
-	}
-
-	fn output_count(&self) -> usize {
-		1
-	}
-
-	fn output_type(&self, output: usize) -> Option<OutputType> {
-		(output == 0).then(|| OutputType { bits: self.bits })
+	fn outputs(&self) -> Box<[OutputType]> {
+		[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
 	fn generate_ir(
@@ -387,20 +354,12 @@ impl Component for Out {
 		(!self.name.is_empty()).then(|| &*self.name)
 	}
 
-	fn input_count(&self) -> usize {
-		1
+	fn inputs(&self) -> Box<[InputType]> {
+		[InputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
-	fn input_type(&self, input: usize) -> Option<InputType> {
-		(input == 0).then(|| InputType { bits: self.bits })
-	}
-
-	fn output_count(&self) -> usize {
-		0
-	}
-
-	fn output_type(&self, _: usize) -> Option<OutputType> {
-		None
+	fn outputs(&self) -> Box<[OutputType]> {
+		[].into()
 	}
 
 	fn generate_ir(
@@ -449,22 +408,17 @@ impl Splitter {
 }
 
 impl Component for Splitter {
-	fn input_count(&self) -> usize {
-		1
+	fn inputs(&self) -> Box<[InputType]> {
+		[InputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
-	fn input_type(&self, index: usize) -> Option<InputType> {
-		(index < 1).then(|| InputType { bits: NonZeroU8::new(32).unwrap() })
-	}
-
-	fn output_count(&self) -> usize {
-		self.outputs.len()
-	}
-
-	fn output_type(&self, index: usize) -> Option<OutputType> {
-		self.outputs.get(index).map(|e| OutputType {
-			bits: NonZeroU8::new(e.get().count_ones().try_into().unwrap()).unwrap(),
-		})
+	fn outputs(&self) -> Box<[OutputType]> {
+		self.outputs
+			.iter()
+			.map(|e| OutputType {
+				bits: NonZeroU8::new(e.get().count_ones().try_into().unwrap()).unwrap(),
+			})
+			.collect()
 	}
 
 	fn generate_ir(
@@ -555,22 +509,17 @@ impl Merger {
 }
 
 impl Component for Merger {
-	fn input_count(&self) -> usize {
-		self.inputs.len()
+	fn inputs(&self) -> Box<[InputType]> {
+		self.inputs
+			.iter()
+			.map(|e| InputType {
+				bits: NonZeroU8::new(e.get().count_ones().try_into().unwrap()).unwrap(),
+			})
+			.collect()
 	}
 
-	fn input_type(&self, index: usize) -> Option<InputType> {
-		self.inputs.get(index).map(|e| InputType {
-			bits: NonZeroU8::new(e.get().count_ones().try_into().unwrap()).unwrap(),
-		})
-	}
-
-	fn output_count(&self) -> usize {
-		1
-	}
-
-	fn output_type(&self, index: usize) -> Option<OutputType> {
-		(index < 1).then(|| OutputType { bits: self.bits })
+	fn outputs(&self) -> Box<[OutputType]> {
+		[OutputType { bits: self.bits }].into()
 	}
 
 	fn generate_ir(
@@ -666,20 +615,12 @@ impl Constant {
 }
 
 impl Component for Constant {
-	fn input_count(&self) -> usize {
-		0
+	fn inputs(&self) -> Box<[InputType]> {
+		[].into()
 	}
 
-	fn input_type(&self, _: usize) -> Option<InputType> {
-		None
-	}
-
-	fn output_count(&self) -> usize {
-		1
-	}
-
-	fn output_type(&self, output: usize) -> Option<OutputType> {
-		(output < 1).then(|| OutputType { bits: self.bits })
+	fn outputs(&self) -> Box<[OutputType]> {
+		[OutputType { bits: self.bits }].into()
 	}
 
 	fn generate_ir(

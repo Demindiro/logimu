@@ -17,20 +17,12 @@ impl ReadOnlyMemory {
 }
 
 impl Component for ReadOnlyMemory {
-	fn input_count(&self) -> usize {
-		1
+	fn inputs(&self) -> Box<[InputType]> {
+		[InputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
-	fn input_type(&self, input: usize) -> Option<InputType> {
-		(input < 1).then(|| InputType { bits: NonZeroU8::new(32).unwrap() })
-	}
-
-	fn output_count(&self) -> usize {
-		1
-	}
-
-	fn output_type(&self, output: usize) -> Option<OutputType> {
-		(output < 1).then(|| OutputType { bits: NonZeroU8::new(32).unwrap() })
+	fn outputs(&self) -> Box<[OutputType]> {
+		[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
 	fn generate_ir(

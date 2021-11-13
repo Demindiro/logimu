@@ -500,7 +500,11 @@ impl epi::App for App {
 							.map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
 					}
 				}
-				for &po in c.inputs().into_iter().chain(c.outputs().into_iter()) {
+				for &po in c
+					.input_points()
+					.into_iter()
+					.chain(c.output_points().into_iter())
+				{
 					(p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
 				}
 			}

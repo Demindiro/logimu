@@ -9,11 +9,11 @@ pub trait CircuitComponent
 where
 	Self: Component,
 {
-	/// All the inputs of this component.
-	fn inputs(&self) -> Box<[PointOffset]>;
+	/// The location of each input on this component.
+	fn input_points(&self) -> Box<[PointOffset]>;
 
-	/// All the outputs of this component.
-	fn outputs(&self) -> Box<[PointOffset]>;
+	/// The location of each output on this component.
+	fn output_points(&self) -> Box<[PointOffset]>;
 
 	fn external_input(&self) -> Option<usize> {
 		None
@@ -29,10 +29,8 @@ where
 impl_dyn! {
 	Component for Box<dyn CircuitComponent> {
 		ref label() -> Option<&str>;
-		ref input_count() -> usize;
-		ref input_type(input: usize) -> Option<InputType>;
-		ref output_count() -> usize;
-		ref output_type(output: usize) -> Option<OutputType>;
+		ref inputs() -> Box<[InputType]>;
+		ref outputs() -> Box<[OutputType]>;
 		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 		ref properties() -> Box<[Property]>;
 		mut set_property(name: &str, value: SetProperty) -> Result<(), Box<dyn Error>>;
@@ -41,8 +39,8 @@ impl_dyn! {
 
 impl_dyn! {
 	CircuitComponent for Box<dyn CircuitComponent> {
-		ref inputs() -> Box<[PointOffset]>;
-		ref outputs() -> Box<[PointOffset]>;
+		ref input_points() -> Box<[PointOffset]>;
+		ref output_points() -> Box<[PointOffset]>;
 		ref external_input() -> Option<usize>;
 		ref external_output() -> Option<usize>;
 		ref aabb(dir: Direction) -> RelativeAabb;

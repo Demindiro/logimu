@@ -163,10 +163,10 @@ where
 	{
 		//self.intersect_zone(position).find_ports_at(self, position, in_callback, out_callback);
 		for (c, h, &(p, d)) in self.graph.nodes() {
-			for (i, &inp) in c.inputs().iter().enumerate() {
+			for (i, &inp) in c.input_points().iter().enumerate() {
 				(p + d * inp).map(|inp| (inp == pos).then(|| in_callback(h, i)));
 			}
-			for (i, &outp) in c.outputs().iter().enumerate() {
+			for (i, &outp) in c.output_points().iter().enumerate() {
 				(p + d * outp).map(|outp| (outp == pos).then(|| out_callback(h, i)));
 			}
 		}
