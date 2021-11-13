@@ -37,6 +37,12 @@ impl ScriptEditor {
 				color: Color32::GREEN,
 				..Default::default()
 			};
+			let fmt_comment = TextFormat {
+				style: TextStyle::Monospace,
+				italics: true,
+				color: Color32::DARK_GRAY,
+				..Default::default()
+			};
 
 			// Figure out which braces to mark
 			let mut redundant_open = Vec::new();
@@ -44,7 +50,9 @@ impl ScriptEditor {
 			let mut closest_open = usize::MAX;
 			let mut closest_open_level = usize::MAX;
 			let mut closest_close = usize::MAX;
-			for (i, c) in string.bytes().enumerate() {
+			let mut comments = Vec::new();
+			let mut it = string.bytes().enumerate();
+			while let Some((i, c)) = it.next() {
 				match c {
 					b'(' => {
 						if i < cursor {
@@ -69,13 +77,23 @@ impl ScriptEditor {
 							closest_close = i;
 						}
 					}
+					b';' => {
+						let mut e = i;
+						for (k, c) in &mut it {
+							e = k;
+							if c == b'\n' {
+								break;
+							}
+						}
+						comments.push(i..e + 1);
+					}
 					_ => (),
 				}
 			}
 			(closest_open_level < redundant_open.len()).then(|| closest_open = usize::MAX);
 
-			// Create sections to mark braces
-			let (mut close_i, mut open_i) = (0, 0);
+			// Create sections
+			let (mut close_i, mut open_i, mut comment_i) = (0, 0, 0);
 			let mut pop = || {
 				let c = *redundant_close.get(close_i).unwrap_or(&usize::MAX);
 				let o = *redundant_open.get(open_i).unwrap_or(&usize::MAX);
@@ -89,35 +107,43 @@ impl ScriptEditor {
 				} else {
 					(usize::MAX, &mut tmp)
 				};
-				let (n, red) = if closest_open < n {
+				let (range, fmt, i) = if comments.get(comment_i).map_or(false, |r| r.start < n) {
 					*i -= 1;
-					(mem::replace(&mut closest_open, usize::MAX), false)
-				} else if closest_close < n {
-					*i -= 1;
-					(mem::replace(&mut closest_close, usize::MAX), false)
+					comment_i += 1;
+					(
+						comments.get(comment_i - 1).unwrap().clone(),
+						fmt_comment,
+						&mut comment_i,
+					)
 				} else {
-					dbg!("wtf");
-					(n, true)
+					(n..n.wrapping_add(1), fmt_red, i)
 				};
-				(n != usize::MAX).then(|| (n, red))
+				let (range, fmt) = if closest_open < range.start {
+					*i -= 1;
+					let m = mem::replace(&mut closest_open, usize::MAX);
+					(m..m.wrapping_add(1), fmt_green)
+				} else if closest_close < range.start {
+					*i -= 1;
+					let m = mem::replace(&mut closest_close, usize::MAX);
+					(m..m.wrapping_add(1), fmt_green)
+				} else {
+					(range, fmt)
+				};
+				(range.start != usize::MAX).then(|| (range, fmt))
 			};
 
 			let mut sections = Vec::new();
 			let mut start = 0;
-			while let Some((i, red)) = pop() {
-				if i > start {
+			while let Some((byte_range, format)) = pop() {
+				if start < byte_range.start {
 					sections.push(LayoutSection {
 						leading_space: 0.0,
-						byte_range: start..i,
+						byte_range: start..byte_range.start,
 						format: fmt_default,
 					});
 				}
-				sections.push(LayoutSection {
-					leading_space: 0.0,
-					byte_range: i..i + 1,
-					format: red.then(|| fmt_red).unwrap_or(fmt_green),
-				});
-				start = i + 1;
+				start = byte_range.end;
+				sections.push(LayoutSection { leading_space: 0.0, byte_range, format });
 			}
 
 			if start != string.len() {
