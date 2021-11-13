@@ -226,12 +226,16 @@ impl epi::App for App {
 					match self.circuit.tests() {
 						Ok(t) => {
 							for t in t {
+								let mut debug = String::default();
 								if ui.button(t.name()).clicked() || run_all {
-									match t.run(
+									let res = t.run(
 										&mut self.memory,
 										&mut self.inputs,
 										&mut self.outputs,
-									) {
+										&mut debug,
+									);
+									(!debug.is_empty()).then(|| self.log.push(Tag::Debug, debug));
+									match res {
 										Ok(()) => self.log.push(
 											Tag::Success,
 											format!("Test '{}' passed!", t.name()),

@@ -37,6 +37,7 @@ impl fmt::Display for Log {
 			f.write_str(match t {
 				Tag::Success => "[success] ",
 				Tag::Error => "[error]   ",
+				Tag::Debug => "[debug]   ",
 			})?;
 			f.write_str(m)?;
 			f.write_str("\n")?;
@@ -48,6 +49,7 @@ impl fmt::Display for Log {
 pub enum Tag {
 	Success,
 	Error,
+	Debug,
 }
 
 impl Tag {
@@ -55,6 +57,7 @@ impl Tag {
 		match self {
 			Self::Success => Color32::LIGHT_GREEN,
 			Self::Error => Color32::RED,
+			Self::Debug => Color32::LIGHT_GRAY,
 		}
 	}
 }

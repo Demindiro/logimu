@@ -1,3 +1,4 @@
+use crate::impl_dyn;
 use core::borrow::Borrow;
 use core::cell::Cell;
 use core::cmp::Ordering;
@@ -183,6 +184,12 @@ impl PartialOrd for Value {
 			(Self::Str(a), Self::Str(b)) => a.partial_cmp(b),
 			_ => None,
 		}
+	}
+}
+
+impl From<()> for Value {
+	fn from(_: ()) -> Self {
+		Self::None
 	}
 }
 
@@ -380,6 +387,12 @@ pub trait Dispatcher {
 	fn handle<'a>(&self, sexpr: &'a SExpr) -> Result<Value, Box<dyn Error + 'a>>;
 }
 
+impl Dispatcher for &dyn Dispatcher {
+	fn handle<'a>(&self, sexpr: &'a SExpr) -> Result<Value, Box<dyn Error + 'a>> {
+		(&**self).handle(sexpr)
+	}
+}
+
 pub trait Storage<K>
 where
 	K: Borrow<str> + Eq + Hash,
@@ -405,6 +418,18 @@ where
 		map.insert(name, value);
 		self.set(map);
 		true
+	}
+}
+
+impl<K> Storage<K> for &dyn Storage<K>
+where
+	K: Borrow<str> + Eq + Hash,
+{
+	fn get(&self, name: &str) -> Option<Value> {
+		(&**self).get(name)
+	}
+	fn set(&self, name: K, value: Value) -> bool {
+		(&**self).set(name, value)
 	}
 }
 
@@ -616,6 +641,43 @@ impl fmt::Display for RunError<'_> {
 // in Runner::handle
 impl Error for RunError<'_> {}
 
+/// Printer for s-expressions. Useful for implementing `print`.
+///
+/// It currently only works with the default `Runner`.
+pub fn print_args<'a, 'r, W, D, S, K>(
+	mut out: W,
+	dispatcher: D,
+	storage: S,
+	args: &'a [Arg],
+) -> Result<(), PrintError<'a>>
+where
+	W: core::fmt::Write,
+	D: Dispatcher,
+	S: Storage<K>,
+	K: Borrow<str> + Eq + Hash + From<Box<str>> + Clone,
+{
+	for a in args.iter() {
+		let v = if let Arg::SExpr(s) = a {
+			dispatcher.handle(s).map_err(PrintError::RunError)?
+		} else if let Arg::Symbol(s) = a {
+			storage
+				.get(s)
+				.ok_or_else(|| PrintError::RunError(RunError::SymbolNotDefined.into()))?
+		} else {
+			a.to_value().unwrap()
+		};
+		out.write_fmt(format_args!("{}", v))
+			.map_err(PrintError::FmtError)?;
+	}
+	Ok(())
+}
+
+#[derive(Debug)]
+pub enum PrintError<'a> {
+	RunError(Box<dyn Error + 'a>),
+	FmtError(fmt::Error),
+}
+
 #[cfg(test)]
 mod test {
 	use super::*;
@@ -626,22 +688,7 @@ mod test {
 			|r, s, f, e| match f {
 				"print" => {
 					let mut o = out.take();
-					for a in &e[1..] {
-						use core::fmt::Write;
-						match a {
-							Arg::Bool(b) => write!(o, "{}", b).unwrap(),
-							Arg::Int(n) => write!(o, "{}", n).unwrap(),
-							Arg::Str(s) => write!(o, "{}", s).unwrap(),
-							Arg::SExpr(s) => {
-								out.set(o);
-								let v = r.handle(s)?;
-								o = out.take();
-								write!(o, "{}", v).unwrap();
-							}
-							Arg::Symbol(s) => todo!("handle symbols ({})", s),
-							_ => todo!(),
-						}
-					}
+					print_args(&mut o, r, s as &dyn Storage<_>, &e[1..]).unwrap();
 					out.set(o);
 					Ok(Value::None)
 				}

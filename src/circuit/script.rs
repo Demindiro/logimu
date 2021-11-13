@@ -55,9 +55,10 @@ where
 		memory: &mut [usize],
 		inputs: &mut [usize],
 		outputs: &mut [usize],
+		log: impl core::fmt::Write,
 	) -> Result<(), TestError> {
-		assert!(self.ir.len() <= memory.len());
 		let (memory, inputs, outputs) = (Cell::new(memory), Cell::new(inputs), Cell::new(outputs));
+		let log = Cell::new(Some(log));
 		let r = Runner::new(
 			|r, s, f, e| {
 				let get_value = |i| -> Result<_, Box<dyn Error>> {
@@ -103,6 +104,18 @@ where
 						interpreter::run(&self.ir, mem, inp, outp);
 						(memory.set(mem), inputs.set(inp), outputs.set(outp));
 						Ok(Value::None)
+					}
+					"print" => {
+						let mut l = log.take().unwrap();
+						match print_args(&mut l, r, s as &dyn Storage<_>, &e[1..]) {
+							Err(PrintError::RunError(e)) => Err(e)?,
+							Err(PrintError::FmtError(_)) => todo!("handle formatting errors"),
+							Ok(()) => {
+								l.write_char('\n').unwrap();
+								log.set(Some(l));
+								Ok(Value::None)
+							}
+						}
 					}
 					f => todo!("{}", f),
 				}
