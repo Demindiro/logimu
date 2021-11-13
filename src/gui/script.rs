@@ -87,6 +87,13 @@ impl ScriptEditor {
 						}
 						comments.push(i..e + 1);
 					}
+					b'"' => {
+						for (_, c) in &mut it {
+							if c == b'"' {
+								break;
+							}
+						}
+					}
 					_ => (),
 				}
 			}
