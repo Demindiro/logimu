@@ -159,7 +159,7 @@ impl Component for Ic {
 
 	fn outputs(&self) -> Box<[OutputType]> {
 		// TODO don't hardcode bits.
-		(0..self.0.inputs.len())
+		(0..self.0.outputs.len())
 			.map(|_| OutputType { bits: core::num::NonZeroU8::new(1).unwrap() })
 			.collect()
 	}
