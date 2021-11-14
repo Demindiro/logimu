@@ -1,4 +1,5 @@
 mod component;
+mod components_info;
 mod dialog;
 mod file;
 mod gates;
@@ -7,6 +8,7 @@ mod log;
 mod script;
 
 use component::*;
+use components_info::*;
 use dialog::Dialog;
 use file::OpenDialog;
 use log::*;
@@ -16,7 +18,7 @@ use crate::circuit;
 use crate::circuit::{CircuitComponent, Ic, WireHandle};
 use crate::simulator;
 
-use crate::simulator::{GraphNodeHandle, Property, PropertyValue, SetProperty};
+use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
 
 use core::any::TypeId;
 use eframe::{egui, epi};
@@ -73,12 +75,12 @@ pub struct App {
 	memory: Box<[usize]>,
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
-	property_value_buffer: Option<(Box<str>, String)>,
 
 	file_path: Box<Path>,
 
 	script_editor: ScriptEditor,
 	log: Log,
+	components_info: ComponentsInfo,
 
 	logged_parse_error: bool,
 }
@@ -100,12 +102,12 @@ impl App {
 			outputs: Vec::new(),
 			memory: Box::default(),
 			needs_update: false,
-			property_value_buffer: Default::default(),
 
 			file_path: PathBuf::new().into(),
 
 			script_editor: Default::default(),
 			log: Default::default(),
+			components_info: Default::default(),
 
 			logged_parse_error: false,
 		};
@@ -328,100 +330,35 @@ impl epi::App for App {
 				}
 			}
 			sep.then(|| ui.separator());
-
-			let mut changed = Vec::new();
-			let mut show_properties = |props: Vec<Property>| {
-				let mut errors = Vec::new();
-				let mut prop_buf = self.property_value_buffer.take();
-				for prop in props {
-					// Capitalize the name
-					let name = prop
-						.name
-						.chars()
-						.enumerate()
-						.map(|(i, c)| (i == 0).then(|| c.to_ascii_uppercase()).unwrap_or(c))
-						.collect::<String>();
-					match prop.value {
-						PropertyValue::Int { value, range } => {
-							let mut v = value;
-							ui.add(Slider::new(&mut v, range.clone()).text(name));
-							if v != value {
-								changed.push((prop.name.clone(), SetProperty::Int(v)));
-							}
-						}
-						PropertyValue::Str { value } => {
-							let mut value = value.to_string();
-							if ui
-								.add(TextEdit::singleline(&mut value).hint_text(name))
-								.changed()
-							{
-								changed.push((prop.name, SetProperty::Str(value.into())));
-							}
-						}
-						PropertyValue::Mask { value } => {
-							let (mut text, modify) = match prop_buf.take() {
-								Some((name, buf)) if name == prop.name => (buf, true),
-								pb => {
-									prop_buf = pb;
-									(mask_to_string(value), false)
-								}
-							};
-							let te = TextEdit::singleline(&mut text).hint_text(name);
-							if ui.add(te).has_focus() {
-								self.property_value_buffer = Some((prop.name, text));
-							} else if modify {
-								match string_to_mask(&text) {
-									Ok(mask) => changed.push((prop.name, SetProperty::Mask(mask))),
-									Err(e) => errors.push(e),
-								}
-							}
-						}
-					}
-				}
-				errors
-			};
-
-			if let Some(c) = self.component.as_mut() {
-				show_properties(c.properties().into())
-					.into_iter()
-					.for_each(|e| self.log.error(e));
-				for (name, value) in changed {
-					let _ = c
-						.set_property(&name, value)
-						.map_err(|e| self.log.error(e.to_string()));
-				}
-			} else {
-				// Only show common properties
-				let mut it = self.selected_components.iter();
-				let mut props: Vec<_> = it
-					.next()
-					.map(|&h| self.circuit.component(h).unwrap().0.properties())
-					.unwrap_or_default()
-					.into();
-				for &h in it {
-					let c = self.circuit.component(h).unwrap().0.properties();
-					let mut common = Vec::new();
-					for p in props {
-						c.iter().find(|e| e.name == p.name).map(|_| common.push(p));
-					}
-					props = common;
-				}
-				show_properties(props.into())
-					.into_iter()
-					.for_each(|e| self.log.error(e.to_string()));
-				for (name, value) in changed {
-					for &h in self.selected_components.iter() {
-						let c = self.circuit.component_mut(h).unwrap().0;
-						let _ = c
-							.set_property(&name, value.clone())
-							.map_err(|e| self.log.error(e.to_string()));
-					}
-				}
-			}
 		};
 		egui::SidePanel::left("components").show(ctx, |ui| {
 			egui::ScrollArea::vertical().show(ui, show_components)
 		});
+
+		// Show component properties
+		if let Some(c) = self.component.as_mut() {
+			let changed = self.components_info.show(ctx, &[c], &mut self.log);
+			for (name, value) in changed {
+				if let Err(e) = c.set_property(&name, value) {
+					self.log.error(e.to_string());
+				}
+			}
+		} else {
+			let c = self
+				.selected_components
+				.iter()
+				.map(|&h| self.circuit.component(h).unwrap().0)
+				.collect::<Vec<_>>();
+			let changed = self.components_info.show(ctx, &c, &mut self.log);
+			for (name, value) in changed {
+				for &h in self.selected_components.iter() {
+					let c = self.circuit.component_mut(h).unwrap().0;
+					if let Err(e) = c.set_property(&name, value.clone()) {
+						self.log.error(e.to_string());
+					}
+				}
+			}
+		}
 
 		CentralPanel::default().show(ctx, |ui| {
 			use epaint::*;
@@ -594,47 +531,4 @@ impl epi::App for App {
 			hover_box.map(|rect| paint.rect_stroke(rect, 8.0, Stroke::new(2.0, Color32::YELLOW)));
 		});
 	}
-}
-
-/// Convert a mask to a human-readable string.
-fn mask_to_string(mut mask: usize) -> String {
-	let mut s = "".to_string();
-	let (mut offt, mut comma) = (0, false);
-	while mask > 0 {
-		if mask & 1 > 0 {
-			comma.then(|| s.push(','));
-			s.extend(offt.to_string().chars());
-			let o = offt;
-			while mask & 2 > 0 {
-				mask >>= 1;
-				offt += 1;
-			}
-			if offt != o {
-				s.push('-');
-				s.extend(offt.to_string().chars());
-			}
-			comma = true;
-		}
-		mask >>= 1;
-		offt += 1;
-	}
-	s
-}
-
-/// Convert a human-readable mask string to an actual mask.
-fn string_to_mask(s: &str) -> Result<usize, String> {
-	let mut mask = 0;
-	for r in s.split(',').map(str::trim) {
-		if let Some((min, max)) = r.split_once('-') {
-			let (min, max) = (min.trim_end(), max.trim_start());
-			let min = min.parse::<u8>().map_err(|e| e.to_string())?;
-			let max = max.parse::<u8>().map_err(|e| e.to_string())?;
-			for i in min..=max {
-				mask |= 1 << i;
-			}
-		} else {
-			mask |= 1 << r.parse::<u8>().map_err(|e| e.to_string())?;
-		}
-	}
-	Ok(mask)
 }
