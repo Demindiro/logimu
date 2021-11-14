@@ -4,7 +4,7 @@ mod dialog;
 mod file;
 mod gates;
 mod ic;
-mod inputs;
+mod inputs_outputs;
 mod log;
 mod script;
 
@@ -12,7 +12,7 @@ use component::*;
 use components_info::*;
 use dialog::Dialog;
 use file::OpenDialog;
-use inputs::*;
+use inputs_outputs::*;
 use log::*;
 use script::*;
 
@@ -83,7 +83,7 @@ pub struct App {
 	script_editor: ScriptEditor,
 	log: Log,
 	components_info: ComponentsInfo,
-	inputs_editor: Inputs,
+	io_editor: InputsOutputs,
 
 	logged_parse_error: bool,
 }
@@ -111,7 +111,7 @@ impl App {
 			script_editor: Default::default(),
 			log: Default::default(),
 			components_info: Default::default(),
-			inputs_editor: Default::default(),
+			io_editor: Default::default(),
 
 			logged_parse_error: false,
 		};
@@ -347,13 +347,17 @@ impl epi::App for App {
 		}
 
 		// If one of the selected components has an external input, allow modifying it.
-		let mut ei = Vec::new();
+		let (mut ei, mut eo) = (Vec::new(), Vec::new());
 		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
 			if let Some(i) = c.external_input() {
 				ei.push((c.label().unwrap_or_default(), i));
 			}
+			if let Some(o) = c.external_output() {
+				eo.push((c.label().unwrap_or_default(), o));
+			}
 		}
-		self.inputs_editor.show(ctx, &ei, &mut self.inputs);
+		self.io_editor
+			.show(ctx, &ei, &eo, &mut self.inputs, &self.outputs);
 
 		CentralPanel::default().show(ctx, |ui| {
 			use epaint::*;
