@@ -276,6 +276,7 @@ impl Component for Out {
 		out: &mut dyn FnMut(IrOp),
 		_: usize,
 	) -> usize {
+		out(IrOp::Andi { a: inputs[0], i: (1 << self.bits.get()) - 1, out: inputs[0] });
 		out(IrOp::Out { a: inputs[0], index: self.index });
 		0
 	}
