@@ -76,7 +76,7 @@ impl Tag {
 		match self {
 			Self::Success => Color32::LIGHT_GREEN,
 			Self::Error => Color32::RED,
-			Self::Debug => Color32::LIGHT_GRAY,
+			Self::Debug => Color32::GRAY,
 		}
 	}
 }
