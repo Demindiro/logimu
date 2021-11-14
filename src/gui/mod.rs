@@ -111,15 +111,21 @@ impl App {
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
-		let e = dbg!(s.load_from_file(f.clone().into()));
-		if e.is_err() {
-			std::env::set_current_dir(f.parent().unwrap()).unwrap();
+		match s.load_from_file(f.clone().into()) {
+			Ok(()) => s.log.debug(format!("Loaded {:?}", f.clone())),
+			Err(e) => {
+				s.log.error(format!("Failed to load {:?}: {:?}", f, e));
+				std::env::set_current_dir(f.parent().unwrap()).unwrap();
+			}
 		}
 
 		for f in std::fs::read_dir(".").unwrap() {
 			let f = f.unwrap().path();
 			if f.extension().and_then(|p| p.to_str()) == Some("logimu") {
-				let _ = dbg!(s.load_ic(f.into()));
+				match s.load_ic(f.clone().into()) {
+					Ok(()) => s.log.debug(format!("Loaded {:?}", f)),
+					Err(e) => s.log.error(format!("Failed to load {:?}: {:?}", f, e)),
+				}
 			}
 		}
 
@@ -148,7 +154,6 @@ impl App {
 
 	pub fn save_to_file(&mut self, path: Option<&Path>) -> Result<(), SaveCircuitError> {
 		let path = path.unwrap_or(&self.file_path);
-		dbg!(path);
 		let f = fs::File::create(&path).map_err(SaveCircuitError::Io)?;
 		ron::ser::to_writer(f, &self.circuit).map_err(SaveCircuitError::Serde)?;
 		Ok(())
@@ -172,7 +177,6 @@ impl epi::App for App {
 		let (ir, mem_size) = self.circuit.generate_ir();
 		if mem_size != self.memory.len() {
 			self.memory = core::iter::repeat(0).take(mem_size).collect::<Box<_>>();
-			dbg!(&ir);
 		}
 		simulator::ir::interpreter::run(&ir, &mut self.memory, &self.inputs, &mut self.outputs);
 
@@ -228,13 +232,12 @@ impl epi::App for App {
 										&mut self.outputs,
 										&mut debug,
 									);
-									(!debug.is_empty()).then(|| self.log.push(Tag::Debug, debug));
+									(!debug.is_empty()).then(|| self.log.debug(debug));
 									match res {
-										Ok(()) => self.log.push(
-											Tag::Success,
-											format!("Test '{}' passed!", t.name()),
-										),
-										Err(e) => self.log.push(Tag::Error, e.to_string()),
+										Ok(()) => {
+											self.log.success(format!("Test '{}' passed!", t.name()))
+										}
+										Err(e) => self.log.error(e.to_string()),
 									}
 									self.log.open = true;
 								}
@@ -242,9 +245,10 @@ impl epi::App for App {
 							}
 						}
 						Err(e) => {
+							// Prevent spamming the log with parse errors.
 							if !self.logged_parse_error {
 								self.log.open = true;
-								self.log.push(Tag::Error, e.to_string());
+								self.log.error(e.to_string());
 								self.logged_parse_error = true;
 							}
 						}
@@ -256,17 +260,13 @@ impl epi::App for App {
 
 		if save {
 			match self.save_to_file(None) {
-				Ok(_) => self.log.push(
-					Tag::Debug,
-					format!("Saved circuit to {:?}", &self.file_path),
-				),
-				Err(e) => {
-					self.log.push(
-						Tag::Error,
-						format!("Failed to save circuit to {:?}: {:?}", &self.file_path, e),
-					);
-					self.log.open = true;
-				}
+				Ok(_) => self
+					.log
+					.debug(format!("Saved circuit to {:?}", &self.file_path)),
+				Err(e) => self.log.error(format!(
+					"Failed to save circuit to {:?}: {:?}",
+					&self.file_path, e
+				)),
 			}
 		}
 
@@ -380,16 +380,15 @@ impl epi::App for App {
 				}
 				errors
 			};
-			let show_err = |e, ui: &mut Ui| {
-				ui.add(Label::new(dbg!(e)).text_color(Color32::RED));
-			};
 
 			if let Some(c) = self.component.as_mut() {
 				show_properties(c.properties().into())
 					.into_iter()
-					.for_each(|e| show_err(e.into(), ui));
+					.for_each(|e| self.log.error(e));
 				for (name, value) in changed {
-					let _ = c.set_property(&name, value).map_err(|e| show_err(e, ui));
+					let _ = c
+						.set_property(&name, value)
+						.map_err(|e| self.log.error(e.to_string()));
 				}
 			} else {
 				// Only show common properties
@@ -409,13 +408,13 @@ impl epi::App for App {
 				}
 				show_properties(props.into())
 					.into_iter()
-					.for_each(|e| show_err(e.into(), ui));
+					.for_each(|e| self.log.error(e.to_string()));
 				for (name, value) in changed {
 					for &h in self.selected_components.iter() {
 						let c = self.circuit.component_mut(h).unwrap().0;
 						let _ = c
 							.set_property(&name, value.clone())
-							.map_err(|e| show_err(e, ui));
+							.map_err(|e| self.log.error(e.to_string()));
 					}
 				}
 			}

@@ -33,6 +33,20 @@ impl Log {
 		(self.entries.len() >= Self::MAX_ENTRIES).then(|| self.entries.pop_front());
 		self.entries.push_back((tag, entry.into()));
 	}
+
+	pub fn debug(&mut self, message: impl Into<Box<str>>) {
+		self.push(Tag::Debug, message);
+	}
+
+	pub fn error(&mut self, message: impl Into<Box<str>>) {
+		self.push(Tag::Error, message);
+		self.open = true;
+	}
+
+	pub fn success(&mut self, message: impl Into<Box<str>>) {
+		self.push(Tag::Success, message);
+		self.open = true;
+	}
 }
 
 impl fmt::Display for Log {
