@@ -16,3 +16,6 @@ serde_test = "*"
 
 [profile.release]
 lto = "fat"
+
+[profile.dev.package."*"]
+opt-level = 3
