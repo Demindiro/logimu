@@ -15,6 +15,20 @@ where
 	/// The location of each output on this component.
 	fn output_points(&self) -> Box<[PointOffset]>;
 
+	/// Get the name of an input.
+	///
+	/// # Panics
+	///
+	/// The index is out of range.
+	fn input_name(&self, index: usize) -> Box<str>;
+
+	/// Get the name of an output.
+	///
+	/// # Panics
+	///
+	/// The index is out of range.
+	fn output_name(&self, index: usize) -> Box<str>;
+
 	fn external_input(&self) -> Option<usize> {
 		None
 	}
@@ -41,6 +55,8 @@ impl_dyn! {
 	CircuitComponent for Box<dyn CircuitComponent> {
 		ref input_points() -> Box<[PointOffset]>;
 		ref output_points() -> Box<[PointOffset]>;
+		ref input_name(index: usize) -> Box<str>;
+		ref output_name(index: usize) -> Box<str>;
 		ref external_input() -> Option<usize>;
 		ref external_output() -> Option<usize>;
 		ref aabb(dir: Direction) -> RelativeAabb;

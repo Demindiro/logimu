@@ -371,11 +371,17 @@ impl epi::App for App {
 					paint.circle(pos, 1.0, Color32::GRAY, Stroke::none());
 				}
 			}
-			let e = ui.interact(ui.max_rect(), ui.id(), Sense::drag());
+			let e = ui.interact(Rect::EVERYTHING, ui.id(), Sense::drag());
 			let color = e
 				.dragged_by(PointerButton::Primary)
 				.then(|| Color32::RED)
 				.unwrap_or(Color32::GREEN);
+			let hover_pos = ctx
+				.input()
+				.pointer
+				.hover_pos()
+				// Shrink as I haven't figured out how to get rid of the padding.
+				.and_then(|p| ui.max_rect().shrink(-8.0).contains(p).then(|| p));
 
 			let pos2point = |pos: Pos2| {
 				let (x, y) = ((pos.x - rect.min.x) / 16.0, (pos.y - rect.min.y) / 16.0);
@@ -422,7 +428,7 @@ impl epi::App for App {
 				let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
 				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
 				let rect = Rect { min, max };
-				if e.hover_pos().map_or(false, |p| rect.contains(p)) {
+				if hover_pos.map_or(false, |p| rect.contains(p)) {
 					// Draw a box around the component
 					hover_box = Some(rect);
 					if e.clicked_by(PointerButton::Secondary) {
@@ -439,12 +445,27 @@ impl epi::App for App {
 							.map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
 					}
 				}
-				for &po in c
+				for ((i, &po), is_in) in c
 					.input_points()
-					.into_iter()
-					.chain(c.output_points().into_iter())
+					.iter()
+					.enumerate()
+					.map(|po| (po, true))
+					.chain(c.output_points().iter().enumerate().map(|po| (po, false)))
 				{
-					(p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
+					if let Some(p) = p + d * po {
+						paint.circle_filled(point2pos(p), 2.0, Color32::GREEN);
+						if hover_pos.map_or(false, |h| pos2point(h) == p) {
+							let name = is_in
+								.then(|| c.input_name(i))
+								.unwrap_or_else(|| c.output_name(i));
+							egui::containers::popup::show_tooltip_at(
+								ctx,
+								ui.id(),
+								Some(point2pos(p) + Vec2::new(8.0, 8.0)),
+								|ui| ui.label(name),
+							);
+						}
+					}
 				}
 			}
 
@@ -475,7 +496,7 @@ impl epi::App for App {
 			}
 
 			// Draw interaction objects (pointer, component, wire ...)
-			if let Some(pos) = e.hover_pos() {
+			if let Some(pos) = hover_pos {
 				let point = pos2point(pos);
 				let pos = point2pos(point);
 

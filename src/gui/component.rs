@@ -58,6 +58,8 @@ impl_dyn! {
 	CircuitComponent for Box<dyn ComponentPlacer> {
 		ref input_points() -> Box<[PointOffset]>;
 		ref output_points() -> Box<[PointOffset]>;
+		ref input_name(index: usize) -> Box<str>;
+		ref output_name(index: usize) -> Box<str>;
 		ref external_input() -> Option<usize>;
 		ref external_output() -> Option<usize>;
 		ref aabb(dir: Direction) -> RelativeAabb;

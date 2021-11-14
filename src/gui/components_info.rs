@@ -98,7 +98,7 @@ impl ComponentsInfo {
 }
 
 /// Convert a mask to a human-readable string.
-fn mask_to_string(mut mask: usize) -> String {
+pub fn mask_to_string(mut mask: usize) -> String {
 	let mut s = "".to_string();
 	let (mut offt, mut comma) = (0, false);
 	while mask > 0 {

@@ -6,7 +6,7 @@ use std::error::Error;
 #[derive(Serialize, Deserialize)]
 pub struct Splitter {
 	/// Mask of bits to output from input.
-	outputs: Vec<NonZeroUsize>,
+	pub outputs: Vec<NonZeroUsize>,
 }
 
 impl Splitter {

@@ -27,6 +27,16 @@ macro_rules! impl_cc {
 				$out.into()
 			}
 
+			fn input_name(&self, index: usize) -> Box<str> {
+				assert!(index < usize::from(self.inputs.get()));
+				format!("Input {}", index).into()
+			}
+
+			fn output_name(&self, index: usize) -> Box<str> {
+				assert!(index < 1);
+				"Output".into()
+			}
+
 			fn aabb(&self, dir: Direction) -> RelativeAabb {
 				dir * RelativeAabb::new(
 					PointOffset::new($min_x, $min_y),
@@ -209,6 +219,16 @@ impl CircuitComponent for NotGate {
 		OUT.into()
 	}
 
+	fn input_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Input".into()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Output".into()
+	}
+
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
 		dir * RelativeAabb::new(PointOffset::new(-1, 0), PointOffset::new(1, 0))
 	}
@@ -254,6 +274,15 @@ impl CircuitComponent for In {
 		Some(self.index)
 	}
 
+	fn input_name(&self, _: usize) -> Box<str> {
+		panic!()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		self.name.clone()
+	}
+
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
 		aabb_in_out(self.bits, dir)
 	}
@@ -289,6 +318,15 @@ impl CircuitComponent for Out {
 
 	fn external_output(&self) -> Option<usize> {
 		Some(self.index)
+	}
+
+	fn input_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		self.name.clone()
+	}
+
+	fn output_name(&self, _: usize) -> Box<str> {
+		panic!()
 	}
 
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
@@ -390,6 +428,15 @@ impl CircuitComponent for Splitter {
 			.collect()
 	}
 
+	fn input_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Input".into()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		format!("{}", super::mask_to_string(self.outputs[index].get())).into()
+	}
+
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
 		aabb_merger_splitter(&*self.input_points(), &*self.output_points(), dir)
 	}
@@ -431,6 +478,15 @@ impl CircuitComponent for Merger {
 
 	fn output_points(&self) -> Box<[PointOffset]> {
 		OUT.into()
+	}
+
+	fn input_name(&self, index: usize) -> Box<str> {
+		format!("{}", super::mask_to_string(self.inputs[index].get())).into()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Output".into()
 	}
 
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
@@ -517,6 +573,15 @@ impl CircuitComponent for Constant {
 		CENTER.into()
 	}
 
+	fn input_name(&self, _: usize) -> Box<str> {
+		panic!()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Output".into()
+	}
+
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
 		dir * RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(0, 0))
 	}
@@ -548,6 +613,16 @@ impl CircuitComponent for ReadOnlyMemory {
 
 	fn output_points(&self) -> Box<[PointOffset]> {
 		[PointOffset::new(4, 0)].into()
+	}
+
+	fn input_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Address".into()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Value".into()
 	}
 
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
