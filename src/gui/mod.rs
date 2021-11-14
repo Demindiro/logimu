@@ -205,9 +205,6 @@ impl epi::App for App {
 			}
 		}
 
-		self.script_editor.show(ctx, &mut self.circuit);
-		self.log.show(ctx);
-
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -283,6 +280,22 @@ impl epi::App for App {
 			r.map(|r| r.inner.map(|r| r.then(|| self.dialog = None)));
 		}
 
+		self.script_editor.show(ctx, &mut self.circuit);
+		self.log.show(ctx);
+
+		// If one of the selected components has an external input, allow modifying it.
+		let (mut ei, mut eo) = (Vec::new(), Vec::new());
+		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
+			if let Some(i) = c.external_input() {
+				ei.push((c.label().unwrap_or_default(), i));
+			}
+			if let Some(o) = c.external_output() {
+				eo.push((c.label().unwrap_or_default(), o));
+			}
+		}
+		self.io_editor
+			.show(ctx, &ei, &eo, &mut self.inputs, &self.outputs);
+
 		let show_components = |ui: &mut Ui| {
 			ui.heading("Components");
 
@@ -317,6 +330,7 @@ impl epi::App for App {
 				}
 			}
 		};
+
 		egui::SidePanel::left("components_list").show(ctx, |ui| {
 			egui::ScrollArea::vertical().show(ui, show_components)
 		});
@@ -345,19 +359,6 @@ impl epi::App for App {
 				}
 			}
 		}
-
-		// If one of the selected components has an external input, allow modifying it.
-		let (mut ei, mut eo) = (Vec::new(), Vec::new());
-		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
-			if let Some(i) = c.external_input() {
-				ei.push((c.label().unwrap_or_default(), i));
-			}
-			if let Some(o) = c.external_output() {
-				eo.push((c.label().unwrap_or_default(), o));
-			}
-		}
-		self.io_editor
-			.show(ctx, &ei, &eo, &mut self.inputs, &self.outputs);
 
 		CentralPanel::default().show(ctx, |ui| {
 			use epaint::*;
