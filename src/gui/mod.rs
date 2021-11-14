@@ -260,10 +260,13 @@ impl epi::App for App {
 					Tag::Debug,
 					format!("Saved circuit to {:?}", &self.file_path),
 				),
-				Err(e) => self.log.push(
-					Tag::Error,
-					format!("Failed to save circuit to {:?}: {:?}", &self.file_path, e),
-				),
+				Err(e) => {
+					self.log.push(
+						Tag::Error,
+						format!("Failed to save circuit to {:?}: {:?}", &self.file_path, e),
+					);
+					self.log.open = true;
+				}
 			}
 		}
 
