@@ -4,6 +4,7 @@ mod dialog;
 mod file;
 mod gates;
 mod ic;
+mod inputs;
 mod log;
 mod script;
 
@@ -11,6 +12,7 @@ use component::*;
 use components_info::*;
 use dialog::Dialog;
 use file::OpenDialog;
+use inputs::*;
 use log::*;
 use script::*;
 
@@ -81,6 +83,7 @@ pub struct App {
 	script_editor: ScriptEditor,
 	log: Log,
 	components_info: ComponentsInfo,
+	inputs_editor: Inputs,
 
 	logged_parse_error: bool,
 }
@@ -108,6 +111,7 @@ impl App {
 			script_editor: Default::default(),
 			log: Default::default(),
 			components_info: Default::default(),
+			inputs_editor: Default::default(),
 
 			logged_parse_error: false,
 		};
@@ -312,26 +316,8 @@ impl epi::App for App {
 					self.component = Some(Box::new(ic.clone()));
 				}
 			}
-
-			ui.separator();
-
-			// If one of the selected components has an external input, allow modifying it.
-			let mut sep = false;
-			for c in self.selected_components.iter() {
-				let (c, ..) = self.circuit.component(*c).unwrap();
-				if let Some(i) = c.external_input() {
-					(!sep).then(|| ui.label("Input value"));
-					let mut n = self.inputs[i] as isize;
-					ui.add(DragValue::new(&mut n));
-					if n != self.inputs[i] as isize {
-						self.inputs[i] = n as usize;
-					}
-					sep = true;
-				}
-			}
-			sep.then(|| ui.separator());
 		};
-		egui::SidePanel::left("components").show(ctx, |ui| {
+		egui::SidePanel::left("components_list").show(ctx, |ui| {
 			egui::ScrollArea::vertical().show(ui, show_components)
 		});
 
@@ -359,6 +345,15 @@ impl epi::App for App {
 				}
 			}
 		}
+
+		// If one of the selected components has an external input, allow modifying it.
+		let mut ei = Vec::new();
+		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
+			if let Some(i) = c.external_input() {
+				ei.push((c.label().unwrap_or_default(), i));
+			}
+		}
+		self.inputs_editor.show(ctx, &ei, &mut self.inputs);
 
 		CentralPanel::default().show(ctx, |ui| {
 			use epaint::*;
