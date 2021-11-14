@@ -1,7 +1,6 @@
 use super::*;
 use crate::arena::{Arena, Handle};
 use core::iter;
-use core::mem;
 
 /// A graph of connected components
 pub struct Graph<C, Uc, Un>
@@ -79,8 +78,8 @@ where
 	}
 
 	pub fn add(&mut self, component: C, userdata: Uc) -> GraphNodeHandle {
-		let ic = component.input_count();
-		let oc = component.output_count();
+		let ic = component.inputs().len();
+		let oc = component.outputs().len();
 		let node = Node {
 			component,
 			inputs: iter::repeat(None).take(ic).collect(),
@@ -241,7 +240,8 @@ where
 		}
 	}
 
-	pub fn disconnect(&mut self, port: Port) -> Result<(), ConnectError> {
+	#[allow(dead_code)]
+	pub fn disconnect(&mut self, _port: Port) -> Result<(), ConnectError> {
 		todo!()
 	}
 
@@ -327,13 +327,11 @@ where
 
 #[derive(Clone, Copy, Debug)]
 pub enum RemoveError {
-	NotConnected,
 	InvalidNode,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum RemoveNexusError {
-	NotConnected,
 	InvalidNexus,
 }
 
@@ -396,23 +394,12 @@ mod test {
 		let bits = NonZeroU8::new(4).unwrap();
 		let i0 = graph.add(Box::new(In::new("I0", bits, 0)), ());
 		let i1 = graph.add(Box::new(In::new("I1", bits, 1)), ());
-		let l0 = graph.add(
-			Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)),
-			(),
-		);
-		let l1 = graph.add(Box::new(NotGate::new(bits)), ());
-		let r0 = graph.add(
-			Box::new(OrGate::new(NonZeroOneU8::new(2).unwrap(), bits)),
-			(),
-		);
-		let lr = graph.add(
-			Box::new(AndGate::new(NonZeroOneU8::new(2).unwrap(), bits)),
-			(),
-		);
-		let cp = graph.add(
-			Box::new(XorGate::new(NonZeroOneU8::new(2).unwrap(), bits)),
-			(),
-		);
+		let inputs = NonZeroOneU8::new(2).unwrap();
+		let l0 = graph.add(Box::new(AndGate::new(inputs)), ());
+		let l1 = graph.add(Box::new(NotGate::new()), ());
+		let r0 = graph.add(Box::new(OrGate::new(inputs)), ());
+		let lr = graph.add(Box::new(AndGate::new(inputs)), ());
+		let cp = graph.add(Box::new(XorGate::new(inputs)), ());
 		let o0 = graph.add(Box::new(Out::new("O0", bits, 0)), ());
 		let o1 = graph.add(Box::new(Out::new("O1", bits, 1)), ());
 

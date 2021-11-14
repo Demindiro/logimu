@@ -45,10 +45,8 @@ where
 impl_dyn! {
 	Component for Box<dyn ComponentPlacer> {
 		ref label() -> Option<&str>;
-		ref input_count() -> usize;
-		ref input_type(input: usize) -> Option<InputType>;
-		ref output_count() -> usize;
-		ref output_type(output: usize) -> Option<OutputType>;
+		ref inputs() -> Box<[InputType]>;
+		ref outputs() -> Box<[OutputType]>;
 		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
 		ref properties() -> Box<[Property]>;
 		mut set_property(name: &str, property: SetProperty) -> Result<(), Box<dyn Error>>;
@@ -58,8 +56,8 @@ impl_dyn! {
 impl_dyn! {
 	#[typetag::serde]
 	CircuitComponent for Box<dyn ComponentPlacer> {
-		ref inputs() -> Box<[PointOffset]>;
-		ref outputs() -> Box<[PointOffset]>;
+		ref input_points() -> Box<[PointOffset]>;
+		ref output_points() -> Box<[PointOffset]>;
 		ref external_input() -> Option<usize>;
 		ref external_output() -> Option<usize>;
 		ref aabb(dir: Direction) -> RelativeAabb;

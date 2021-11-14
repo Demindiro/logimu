@@ -1,4 +1,3 @@
-use crate::impl_dyn;
 use core::borrow::Borrow;
 use core::cell::Cell;
 use core::cmp::Ordering;
@@ -85,6 +84,7 @@ macro_rules! op {
 }
 
 impl Value {
+	#[allow(dead_code)]
 	fn type_name(&self) -> &'static str {
 		match self {
 			Self::None => "none",
@@ -108,6 +108,7 @@ impl Value {
 		}
 	}
 
+	#[allow(dead_code)]
 	pub fn as_str(&self) -> Option<&str> {
 		match self {
 			Self::Str(s) => Some(&**s),
@@ -236,7 +237,32 @@ impl SExpr {
 					loop {
 						match source.next().ok_or(ParseError::ExpectedEndQuote)? {
 							'"' => break,
-							'\\' => todo!("escaped char"),
+							'\\' => {
+								let mut next = || source.next().ok_or(ParseError::ExpectedChar);
+								let c = match next()? {
+									'n' => '\n',
+									'r' => '\r',
+									't' => '\t',
+									'"' => '"',
+									'0' => '\0',
+									'\\' => '\\',
+									'x' => {
+										let (h, l) = (next()?, next()?);
+										let h = match h {
+											'0'..='7' => h as u8 - b'0',
+											c => Err(ParseError::InvalidEscapedChar(c))?,
+										};
+										let l = match l.to_ascii_lowercase() {
+											'0'..='7' => l as u8 - b'0',
+											'a'..='f' => l as u8 - b'a' + 10,
+											c => Err(ParseError::InvalidEscapedChar(c))?,
+										};
+										((h << 4) | l) as char
+									}
+									c => Err(ParseError::InvalidEscapedChar(c))?,
+								};
+								s.push(c);
+							}
 							c => s.push(c),
 						}
 					}
@@ -282,6 +308,7 @@ impl SExpr {
 					args.push(match &*s {
 						"true" => Arg::Bool(true),
 						"false" => Arg::Bool(false),
+						"none" => Arg::None,
 						_ => Arg::Symbol(s.into()),
 					});
 				}
@@ -325,7 +352,9 @@ pub enum ParseError {
 	ExpectedOpenBrace,
 	ExpectedCloseBrace,
 	ExpectedEndQuote,
+	ExpectedChar,
 	InvalidDigit(char),
+	InvalidEscapedChar(char),
 }
 
 impl fmt::Display for ParseError {
@@ -334,7 +363,9 @@ impl fmt::Display for ParseError {
 			Self::ExpectedOpenBrace => "expected opening brace '('".fmt(f),
 			Self::ExpectedCloseBrace => "expected closing brace ')'".fmt(f),
 			Self::ExpectedEndQuote => "expected closing quote '\"'".fmt(f),
+			Self::ExpectedChar => "expected character".fmt(f),
 			Self::InvalidDigit(c) => write!(f, "invalid digit '{}'", c),
+			Self::InvalidEscapedChar(c) => write!(f, "invalid escape character '{}'", c),
 		}
 	}
 }

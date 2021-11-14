@@ -49,6 +49,10 @@ pub enum IrOp {
 		value: usize,
 		out: usize,
 	},
+	Copy {
+		a: usize,
+		out: usize,
+	},
 	Read {
 		memory: Arc<[usize]>,
 		address: usize,
@@ -78,6 +82,7 @@ impl fmt::Debug for IrOp {
 			IrOp::Andi { a, i, out } => fmt2(f, "andi", a, i, out),
 			IrOp::Slli { a, i, out } => fmt2(f, "slli", a, &(*i).into(), out),
 			IrOp::Srli { a, i, out } => fmt2(f, "srli", a, &(*i).into(), out),
+			IrOp::Copy { a, out } => fmt1(f, "copy", a, out),
 			IrOp::Load { value, out } => fmt1(f, "load", value, out),
 			IrOp::Read { address, out, .. } => write!(f, "{:>3} = (read [_] {:>3})", out, address),
 			IrOp::RunIc { ic, offset, inputs, outputs } => write!(

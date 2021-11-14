@@ -142,14 +142,12 @@ where
 
 #[derive(Debug)]
 pub enum TestError {
-	ParseError(ParseError),
 	RunError(Box<dyn Error>),
 }
 
 impl fmt::Display for TestError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Self::ParseError(e) => e.fmt(f),
 			Self::RunError(e) => e.fmt(f),
 		}
 	}

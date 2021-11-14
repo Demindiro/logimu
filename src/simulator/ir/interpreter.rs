@@ -17,6 +17,7 @@ pub fn run(ops: &[IrOp], memory: &mut [usize], input: &[usize], output: &mut [us
 			&IrOp::Andi { a, i, out } => memory[out] = memory[a] & i,
 			&IrOp::Slli { a, i, out } => memory[out] = memory[a] << i,
 			&IrOp::Srli { a, i, out } => memory[out] = memory[a] >> i,
+			&IrOp::Copy { a, out } => memory[out] = memory[a],
 			&IrOp::Load { value, out } => memory[out] = value,
 			IrOp::Read { memory: mem, address, out } => {
 				memory[*out] = *mem.get(memory[*address]).unwrap_or(&0)

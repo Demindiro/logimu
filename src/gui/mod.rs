@@ -13,9 +13,9 @@ use log::*;
 use script::*;
 
 use crate::circuit;
-use crate::circuit::{Circuit, CircuitComponent, Ic, LoadError, WireHandle};
+use crate::circuit::{CircuitComponent, Ic, WireHandle};
 use crate::simulator;
-use crate::simulator::ir::IrOp;
+
 use crate::simulator::{GraphNodeHandle, Property, PropertyValue, SetProperty};
 
 use core::any::TypeId;
@@ -24,7 +24,6 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 	fn a() -> core::num::NonZeroU8 {
@@ -35,11 +34,11 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 	}
 	use simulator::*;
 	&[
-		("and", || Box::new(AndGate::new(b(), a()))),
-		("or", || Box::new(OrGate::new(b(), a()))),
-		("not", || Box::new(NotGate::new(a()))),
-		("xor", || Box::new(XorGate::new(b(), a()))),
-		("splitter", || Box::new(Splitter::new(a()))),
+		("and", || Box::new(AndGate::new(b()))),
+		("or", || Box::new(OrGate::new(b()))),
+		("not", || Box::new(NotGate::new())),
+		("xor", || Box::new(XorGate::new(b()))),
+		("splitter", || Box::new(Splitter::new())),
 		("merger", || Box::new(Merger::new(a()))),
 		("constant", || Box::new(Constant::new(a(), 0))),
 		("rom", || Box::new(ReadOnlyMemory::default())),
@@ -69,8 +68,6 @@ pub struct App {
 	selected_components: Vec<GraphNodeHandle>,
 	selected_wires: Vec<WireHandle>,
 
-	current_bit_width: u8,
-
 	inputs: Vec<usize>,
 	outputs: Vec<usize>,
 	memory: Box<[usize]>,
@@ -88,7 +85,6 @@ pub struct App {
 
 impl App {
 	pub fn new() -> Self {
-		use crate::simulator::*;
 		let mut s = Self {
 			dialog: None,
 			component: None,
@@ -99,8 +95,6 @@ impl App {
 
 			selected_components: Default::default(),
 			selected_wires: Default::default(),
-
-			current_bit_width: Default::default(),
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
@@ -117,15 +111,21 @@ impl App {
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
-		let e = dbg!(s.load_from_file(f.clone().into()));
-		if e.is_err() {
-			std::env::set_current_dir(f.parent().unwrap()).unwrap();
+		match s.load_from_file(f.clone().into()) {
+			Ok(()) => s.log.debug(format!("Loaded {:?}", f.clone())),
+			Err(e) => {
+				s.log.error(format!("Failed to load {:?}: {:?}", f, e));
+				std::env::set_current_dir(f.parent().unwrap()).unwrap();
+			}
 		}
 
 		for f in std::fs::read_dir(".").unwrap() {
 			let f = f.unwrap().path();
 			if f.extension().and_then(|p| p.to_str()) == Some("logimu") {
-				let _ = dbg!(s.load_ic(f.into()));
+				match s.load_ic(f.clone().into()) {
+					Ok(()) => s.log.debug(format!("Loaded {:?}", f)),
+					Err(e) => s.log.error(format!("Failed to load {:?}: {:?}", f, e)),
+				}
 			}
 		}
 
@@ -154,7 +154,6 @@ impl App {
 
 	pub fn save_to_file(&mut self, path: Option<&Path>) -> Result<(), SaveCircuitError> {
 		let path = path.unwrap_or(&self.file_path);
-		dbg!(path);
 		let f = fs::File::create(&path).map_err(SaveCircuitError::Io)?;
 		ron::ser::to_writer(f, &self.circuit).map_err(SaveCircuitError::Serde)?;
 		Ok(())
@@ -178,7 +177,6 @@ impl epi::App for App {
 		let (ir, mem_size) = self.circuit.generate_ir();
 		if mem_size != self.memory.len() {
 			self.memory = core::iter::repeat(0).take(mem_size).collect::<Box<_>>();
-			dbg!(&ir);
 		}
 		simulator::ir::interpreter::run(&ir, &mut self.memory, &self.inputs, &mut self.outputs);
 
@@ -234,13 +232,12 @@ impl epi::App for App {
 										&mut self.outputs,
 										&mut debug,
 									);
-									(!debug.is_empty()).then(|| self.log.push(Tag::Debug, debug));
+									(!debug.is_empty()).then(|| self.log.debug(debug));
 									match res {
-										Ok(()) => self.log.push(
-											Tag::Success,
-											format!("Test '{}' passed!", t.name()),
-										),
-										Err(e) => self.log.push(Tag::Error, e.to_string()),
+										Ok(()) => {
+											self.log.success(format!("Test '{}' passed!", t.name()))
+										}
+										Err(e) => self.log.error(e.to_string()),
 									}
 									self.log.open = true;
 								}
@@ -248,9 +245,10 @@ impl epi::App for App {
 							}
 						}
 						Err(e) => {
+							// Prevent spamming the log with parse errors.
 							if !self.logged_parse_error {
 								self.log.open = true;
-								self.log.push(Tag::Error, e.to_string());
+								self.log.error(e.to_string());
 								self.logged_parse_error = true;
 							}
 						}
@@ -261,8 +259,15 @@ impl epi::App for App {
 		});
 
 		if save {
-			let e = self.save_to_file(None);
-			dbg!(e);
+			match self.save_to_file(None) {
+				Ok(_) => self
+					.log
+					.debug(format!("Saved circuit to {:?}", &self.file_path)),
+				Err(e) => self.log.error(format!(
+					"Failed to save circuit to {:?}: {:?}",
+					&self.file_path, e
+				)),
+			}
 		}
 
 		if let Some(dialog) = self.dialog.as_mut() {
@@ -375,16 +380,15 @@ impl epi::App for App {
 				}
 				errors
 			};
-			let show_err = |e, ui: &mut Ui| {
-				ui.add(Label::new(dbg!(e)).text_color(Color32::RED));
-			};
 
 			if let Some(c) = self.component.as_mut() {
 				show_properties(c.properties().into())
 					.into_iter()
-					.for_each(|e| show_err(e.into(), ui));
+					.for_each(|e| self.log.error(e));
 				for (name, value) in changed {
-					let _ = c.set_property(&name, value).map_err(|e| show_err(e, ui));
+					let _ = c
+						.set_property(&name, value)
+						.map_err(|e| self.log.error(e.to_string()));
 				}
 			} else {
 				// Only show common properties
@@ -404,13 +408,13 @@ impl epi::App for App {
 				}
 				show_properties(props.into())
 					.into_iter()
-					.for_each(|e| show_err(e.into(), ui));
+					.for_each(|e| self.log.error(e.to_string()));
 				for (name, value) in changed {
 					for &h in self.selected_components.iter() {
 						let c = self.circuit.component_mut(h).unwrap().0;
 						let _ = c
 							.set_property(&name, value.clone())
-							.map_err(|e| show_err(e, ui));
+							.map_err(|e| self.log.error(e.to_string()));
 					}
 				}
 			}
@@ -422,7 +426,7 @@ impl epi::App for App {
 		CentralPanel::default().show(ctx, |ui| {
 			use epaint::*;
 			let rect = ui.max_rect();
-			let paint = ui.painter_at(rect);
+			let _paint = ui.painter_at(rect);
 			let paint = ui.painter();
 			for y in (rect.min.y as u16..rect.max.y as u16).step_by(16) {
 				for x in (rect.min.x as u16..rect.max.x as u16).step_by(16) {
@@ -498,7 +502,11 @@ impl epi::App for App {
 							.map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
 					}
 				}
-				for &po in c.inputs().into_iter().chain(c.outputs().into_iter()) {
+				for &po in c
+					.input_points()
+					.into_iter()
+					.chain(c.output_points().into_iter())
+				{
 					(p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
 				}
 			}
@@ -563,8 +571,7 @@ impl epi::App for App {
 						// pressed if the secondary was pressed and then released at the same
 						// time.
 						if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
-							self.circuit
-								.add_wire(circuit::Wire { from: start, to: point });
+							self.circuit.add_wire(circuit::Wire::new(start, point));
 							self.wire_start = None;
 							self.needs_update = true;
 						}
@@ -615,7 +622,7 @@ fn mask_to_string(mut mask: usize) -> String {
 }
 
 /// Convert a human-readable mask string to an actual mask.
-fn string_to_mask(mut s: &str) -> Result<usize, String> {
+fn string_to_mask(s: &str) -> Result<usize, String> {
 	let mut mask = 0;
 	for r in s.split(',').map(str::trim) {
 		if let Some((min, max)) = r.split_once('-') {

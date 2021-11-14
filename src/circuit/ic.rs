@@ -1,7 +1,7 @@
 use super::*;
 use crate::simulator::ir;
 use core::cmp::Ordering;
-use serde::de::{Deserializer, Visitor};
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap};
 use std::error::Error;
@@ -150,28 +150,18 @@ impl<'a> Deserialize<'a> for Ic {
 }
 
 impl Component for Ic {
-	fn input_count(&self) -> usize {
-		self.0.inputs.len()
-	}
-
-	fn input_type(&self, input: usize) -> Option<InputType> {
+	fn inputs(&self) -> Box<[InputType]> {
 		// TODO don't hardcode bits.
-		self.0
-			.inputs
-			.get(input)
+		(0..self.0.inputs.len())
 			.map(|_| InputType { bits: core::num::NonZeroU8::new(1).unwrap() })
+			.collect()
 	}
 
-	fn output_count(&self) -> usize {
-		self.0.outputs.len()
-	}
-
-	fn output_type(&self, output: usize) -> Option<OutputType> {
+	fn outputs(&self) -> Box<[OutputType]> {
 		// TODO don't hardcode bits.
-		self.0
-			.outputs
-			.get(output)
+		(0..self.0.inputs.len())
 			.map(|_| OutputType { bits: core::num::NonZeroU8::new(1).unwrap() })
+			.collect()
 	}
 
 	fn generate_ir(
@@ -203,23 +193,23 @@ impl Component for Ic {
 		Box::default()
 	}
 
-	fn set_property(&mut self, name: &str, value: SetProperty) -> Result<(), Box<dyn Error>> {
+	fn set_property(&mut self, _name: &str, _value: SetProperty) -> Result<(), Box<dyn Error>> {
 		Err("no properties".into())
 	}
 }
 
 #[typetag::serde]
 impl CircuitComponent for Ic {
-	fn inputs(&self) -> Box<[PointOffset]> {
+	fn input_points(&self) -> Box<[PointOffset]> {
 		self.0.inputs.clone()
 	}
 
-	fn outputs(&self) -> Box<[PointOffset]> {
+	fn output_points(&self) -> Box<[PointOffset]> {
 		self.0.outputs.clone()
 	}
 
 	fn aabb(&self, dir: Direction) -> RelativeAabb {
-		let (inp, outp) = (self.inputs(), self.outputs());
+		let (inp, outp) = (self.input_points(), self.output_points());
 		let mut iter = inp.iter().chain(outp.iter());
 		let s = *iter.next().unwrap();
 		let mut aabb = RelativeAabb::new(s, s);
