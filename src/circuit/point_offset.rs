@@ -16,6 +16,18 @@ impl PointOffset {
 	}
 }
 
+impl Point {
+	pub fn saturating_add(self, offset: PointOffset) -> Self {
+		let f = |b, d| {
+			(i32::from(b) + i32::from(d))
+				.clamp(0, u16::MAX.into())
+				.try_into()
+				.unwrap()
+		};
+		Self::new(f(self.x, offset.x), f(self.y, offset.y))
+	}
+}
+
 impl Add<PointOffset> for Point {
 	type Output = Option<Self>;
 

@@ -425,7 +425,7 @@ impl epi::App for App {
 				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
 				let aabb = c.aabb(d);
 				let delta = Vec2::new(8.0, 8.0);
-				let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
+				let (min, max) = (p.saturating_add(aabb.min), p.saturating_add(aabb.max));
 				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
 				let rect = Rect { min, max };
 				if hover_pos.map_or(false, |p| rect.contains(p)) {
