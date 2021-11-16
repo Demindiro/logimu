@@ -510,6 +510,7 @@ impl epi::App for App {
 							[*self.memory.get(h.index()).unwrap_or(&0) & 1],
 					),
 				};
+				let intersects = hover_pos.map_or(false, |p| w.intersect_point(pos2point(p)));
 				if intersects && e.clicked_by(PointerButton::Secondary) {
 					// Mark the wire as selected, or unselect if already selected.
 					if let Some(i) = self.selected_wires.iter().position(|e| e == &wh) {
