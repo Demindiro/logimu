@@ -192,6 +192,13 @@ impl epi::App for App {
 
 		use egui::*;
 
+		// Cancel any active actions.
+		if ctx.input().key_pressed(Key::Escape) {
+			self.wire_start = None;
+			self.component = None;
+			self.drag_component = None;
+		}
+
 		if ctx.input().key_pressed(Key::R) {
 			self.component_direction = self.component_direction.rotate_clockwise();
 			self.drag_component
