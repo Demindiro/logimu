@@ -372,10 +372,6 @@ impl epi::App for App {
 				}
 			}
 			let e = ui.interact(Rect::EVERYTHING, ui.id(), Sense::drag());
-			let color = e
-				.dragged_by(PointerButton::Primary)
-				.then(|| Color32::RED)
-				.unwrap_or(Color32::GREEN);
 			let hover_pos = ctx
 				.input()
 				.pointer
@@ -421,6 +417,7 @@ impl epi::App for App {
 
 			// Draw existing components
 			let mut hover_box = None;
+			let mut allow_place_wire = true;
 			for (c, p, d, h) in self.circuit.components(aabb) {
 				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
 				let aabb = c.aabb(d);
@@ -428,7 +425,8 @@ impl epi::App for App {
 				let (min, max) = (p.saturating_add(aabb.min), p.saturating_add(aabb.max));
 				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
 				let rect = Rect { min, max };
-				if hover_pos.map_or(false, |p| rect.contains(p)) {
+				let hover_on_component = hover_pos.map_or(false, |p| rect.contains(p));
+				if hover_on_component {
 					// Draw a box around the component
 					hover_box = Some(rect);
 					if e.clicked_by(PointerButton::Secondary) {
@@ -445,6 +443,7 @@ impl epi::App for App {
 							.map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
 					}
 				}
+				let mut hover_on_port = false;
 				for ((i, &po), is_in) in c
 					.input_points()
 					.iter()
@@ -455,6 +454,7 @@ impl epi::App for App {
 					if let Some(p) = p + d * po {
 						paint.circle_filled(point2pos(p), 2.0, Color32::GREEN);
 						if hover_pos.map_or(false, |h| pos2point(h) == p) {
+							hover_on_port = true;
 							let name = is_in
 								.then(|| c.input_name(i))
 								.unwrap_or_else(|| c.output_name(i));
@@ -467,6 +467,7 @@ impl epi::App for App {
 						}
 					}
 				}
+				allow_place_wire &= !hover_on_component | hover_on_port;
 			}
 
 			// Draw existing wires
@@ -519,24 +520,23 @@ impl epi::App for App {
 					} else {
 						self.component = Some(c);
 					}
-				} else {
-					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
+				} else if let Some(start) = self.wire_start {
+					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, Color32::RED));
 
-					if let Some(start) = self.wire_start {
-						paint.line_segment([point2pos(start), pos], wire_stroke);
+					paint.line_segment([point2pos(start), pos], wire_stroke);
 
-						// FIXME egui for some reason thinks that the primary button is not
-						// pressed if the secondary was pressed and then released at the same
-						// time.
-						if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
-							self.circuit.add_wire(circuit::Wire::new(start, point));
-							self.wire_start = None;
-							self.needs_update = true;
-						}
-					} else {
-						if e.drag_started() && e.dragged_by(PointerButton::Primary) {
-							self.wire_start = Some(point);
-						}
+					// FIXME egui for some reason thinks that the primary button is not
+					// pressed if the secondary was pressed and then released at the same
+					// time.
+					if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
+						self.circuit.add_wire(circuit::Wire::new(start, point));
+						self.wire_start = None;
+						self.needs_update = true;
+					}
+				} else if allow_place_wire {
+					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, Color32::GREEN));
+					if e.drag_started() && e.dragged_by(PointerButton::Primary) {
+						self.wire_start = Some(point);
 					}
 				}
 			}
