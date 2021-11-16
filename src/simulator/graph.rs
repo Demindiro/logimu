@@ -1,6 +1,7 @@
 use super::*;
 use crate::arena::{Arena, Handle};
 use core::iter;
+use core::mem;
 
 /// A graph of connected components
 pub struct Graph<C, Uc, Un>
@@ -203,46 +204,41 @@ where
 		Ok(())
 	}
 
+	/// Connect a node's port to a nexus, or disconnect by specifying None.
 	pub fn connect(
 		&mut self,
 		port: Port,
-		nexus: NexusHandle,
+		nexus: Option<NexusHandle>,
 	) -> Result<Option<NexusHandle>, ConnectError> {
 		let nod = self
 			.nodes
 			.get_mut(port.node().0)
 			.ok_or(ConnectError::InvalidNode)?;
-		let nex = self
-			.nexuses
-			.get_mut(nexus.0)
-			.ok_or(ConnectError::InvalidNexus)?;
+		let nex = nexus
+			.map(|n| self.nexuses.get_mut(n.0).ok_or(ConnectError::InvalidNexus))
+			.transpose()?;
 		match port {
 			Port::Input { port, node } => {
-				nex.outputs.push(node);
+				nex.map(|n| n.outputs.push(node));
 				let e = nod.inputs.get_mut(port).ok_or(ConnectError::InvalidPort)?;
 				if let Some(e) = e {
 					let n = &mut self.nexuses[e.0];
 					n.outputs
 						.remove(n.outputs.iter().position(|e| *e == node).unwrap());
 				}
-				Ok(e.replace(nexus))
+				Ok(mem::replace(e, nexus))
 			}
 			Port::Output { port, node } => {
-				nex.inputs.push(node);
+				nex.map(|n| n.inputs.push(node));
 				let e = nod.outputs.get_mut(port).ok_or(ConnectError::InvalidPort)?;
 				if let Some(e) = e {
 					let n = &mut self.nexuses[e.0];
 					n.inputs
 						.remove(n.inputs.iter().position(|e| *e == node).unwrap());
 				}
-				Ok(e.replace(nexus))
+				Ok(mem::replace(e, nexus))
 			}
 		}
-	}
-
-	#[allow(dead_code)]
-	pub fn disconnect(&mut self, _port: Port) -> Result<(), ConnectError> {
-		todo!()
 	}
 
 	pub fn generate_ir(&self) -> (Vec<ir::IrOp>, usize) {

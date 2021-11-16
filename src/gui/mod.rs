@@ -17,7 +17,7 @@ use log::*;
 use script::*;
 
 use crate::circuit;
-use crate::circuit::{CircuitComponent, Ic, WireHandle};
+use crate::circuit::{CircuitComponent, Direction, Ic, PointOffset, WireHandle};
 use crate::simulator;
 
 use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
@@ -86,6 +86,8 @@ pub struct App {
 	io_editor: InputsOutputs,
 
 	logged_parse_error: bool,
+
+	drag_component: Option<(GraphNodeHandle, PointOffset, Direction)>,
 }
 
 impl App {
@@ -114,6 +116,8 @@ impl App {
 			io_editor: Default::default(),
 
 			logged_parse_error: false,
+
+			drag_component: None,
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
@@ -190,6 +194,9 @@ impl epi::App for App {
 
 		if ctx.input().key_pressed(Key::R) {
 			self.component_direction = self.component_direction.rotate_clockwise();
+			self.drag_component
+				.as_mut()
+				.map(|(.., d)| *d = d.rotate_clockwise());
 		}
 
 		// Check if we should remove any selected components and/or wires
@@ -397,6 +404,7 @@ impl epi::App for App {
 
 			let wire_stroke = Stroke::new(3.0, Color32::WHITE);
 			let selected_color = Color32::LIGHT_BLUE.linear_multiply(0.5);
+			let move_alpha = 0.5;
 
 			let aabb = circuit::Aabb::new(pos2point(rect.min), pos2point(rect.max));
 
@@ -418,8 +426,14 @@ impl epi::App for App {
 			// Draw existing components
 			let mut hover_box = None;
 			let mut allow_place_wire = true;
+			let mut hover_component = None;
 			for (c, p, d, h) in self.circuit.components(aabb) {
-				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
+				// Don't draw components that are being moved
+				if self.drag_component.map_or(false, |(c, ..)| c == h) {
+					continue;
+				}
+
+				c.draw(&paint, 1.0, point2pos(p), d, &self.inputs, &self.outputs);
 				let aabb = c.aabb(d);
 				let delta = Vec2::new(8.0, 8.0);
 				let (min, max) = (p.saturating_add(aabb.min), p.saturating_add(aabb.max));
@@ -428,7 +442,7 @@ impl epi::App for App {
 				let hover_on_component = hover_pos.map_or(false, |p| rect.contains(p));
 				if hover_on_component {
 					// Draw a box around the component
-					hover_box = Some(rect);
+					(hover_box, hover_component) = (Some(rect), Some(h));
 					if e.clicked_by(PointerButton::Secondary) {
 						// Mark the component as selected, or unselect if already selected.
 						if let Some(i) = self.selected_components.iter().position(|e| e == &h) {
@@ -504,6 +518,7 @@ impl epi::App for App {
 				if let Some(c) = self.component.take() {
 					c.draw(
 						&paint,
+						move_alpha,
 						pos,
 						self.component_direction,
 						&self.inputs,
@@ -533,10 +548,30 @@ impl epi::App for App {
 						self.wire_start = None;
 						self.needs_update = true;
 					}
+				} else if let Some((h, p, d)) = self.drag_component {
+					let p = point.saturating_add(p);
+					let (c, ..) = self.circuit.component(h).unwrap();
+					c.draw(
+						paint,
+						move_alpha,
+						point2pos(p),
+						d,
+						&self.inputs,
+						&self.outputs,
+					);
+					if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
+						self.drag_component = None;
+						self.circuit.move_component(h, p, d).unwrap();
+					}
 				} else if allow_place_wire {
 					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, Color32::GREEN));
 					if e.drag_started() && e.dragged_by(PointerButton::Primary) {
 						self.wire_start = Some(point);
+					}
+				} else if let Some(c) = hover_component {
+					if e.drag_started() && e.dragged_by(PointerButton::Primary) {
+						let (_, p, d) = self.circuit.component(c).unwrap();
+						self.drag_component = Some((c, (p - point).unwrap(), d));
 					}
 				}
 			}

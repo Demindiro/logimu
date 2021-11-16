@@ -35,6 +35,7 @@ where
 	fn draw(
 		&self,
 		painter: &Painter,
+		alpha: f32,
 		position: Pos2,
 		direction: Direction,
 		inputs: &[usize],

@@ -142,6 +142,43 @@ where
 		self.graph.get_mut(handle).map(|(c, &mut (p, d))| (c, p, d))
 	}
 
+	pub fn move_component(
+		&mut self,
+		handle: GraphNodeHandle,
+		position: Point,
+		direction: Direction,
+	) -> Result<(), MoveError> {
+		let (node, &(p, dir)) = self.graph.get(handle).ok_or(MoveError::InvalidHandle)?;
+		let (ip, op) = (node.input_points(), node.output_points());
+
+		for (port, &ip) in ip.iter().enumerate() {
+			if let Some(ip) = p + dir * ip {
+				for (_, (w, _)) in self.wires.iter() {
+					if w.from == ip || w.to == ip {
+						self.graph
+							.connect(Port::Input { node: handle, port }, None)
+							.unwrap();
+					}
+				}
+			}
+		}
+		for (port, &op) in op.iter().enumerate() {
+			if let Some(op) = p + dir * op {
+				for (_, (w, _)) in self.wires.iter() {
+					if w.from == op || w.to == op {
+						self.graph
+							.connect(Port::Output { node: handle, port }, None)
+							.unwrap();
+					}
+				}
+			}
+		}
+
+		let (_, (p, dir)) = self.graph.get_mut(handle).unwrap();
+		(*p, *dir) = (position, direction);
+		Ok(())
+	}
+
 	pub fn components(&self, aabb: Aabb) -> ComponentIter<C> {
 		ComponentIter {
 			iter: self.graph.nodes(),
@@ -203,12 +240,12 @@ where
 				);
 				if let Some((node, port)) = inp {
 					self.graph
-						.connect(Port::Input { node, port }, *nexus)
+						.connect(Port::Input { node, port }, Some(*nexus))
 						.unwrap();
 				}
 				if let Some((node, port)) = outp {
 					self.graph
-						.connect(Port::Output { node, port }, *nexus)
+						.connect(Port::Output { node, port }, Some(*nexus))
 						.unwrap();
 				}
 			}
@@ -386,6 +423,11 @@ where
 		}
 		None
 	}
+}
+
+#[derive(Debug)]
+pub enum MoveError {
+	InvalidHandle,
 }
 
 #[cfg(test)]
