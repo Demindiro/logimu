@@ -50,7 +50,12 @@ impl<C> Circuit<C>
 where
 	C: CircuitComponent,
 {
-	pub fn add_wire(&mut self, wire: Wire) -> WireHandle {
+	/// Add a new wire to this circuit. The wire must not be zero-length.
+	pub fn add_wire(&mut self, wire: Wire) -> Option<WireHandle> {
+		if wire.from == wire.to {
+			return None;
+		}
+
 		// Add wire to existing nexus if it connects with one.
 		// Otherwise create a new nexus and add the wire to it.
 		let mut nexus = None;
@@ -83,7 +88,7 @@ where
 		// to this wire's nexus.
 		self.connect_wire(Some(handle));
 
-		handle
+		Some(handle)
 	}
 
 	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), &'static str> {
@@ -296,7 +301,7 @@ where
 								return Err(de::Error::duplicate_field("wires"));
 							}
 							handled_wires = true;
-							for w in map.next_value::<Vec<Wire>>()?.into_iter() {
+							for w in map.next_value::<Vec<Wire>>()? {
 								s.add_wire(w);
 							}
 						}

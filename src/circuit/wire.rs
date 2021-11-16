@@ -34,6 +34,15 @@ impl Wire {
 	pub fn aabb(&self) -> Aabb {
 		Aabb::new(self.from, self.to)
 	}
+
+	/// Return the squared length of this wire.
+	#[allow(dead_code)]
+	pub fn length_squared(&self) -> u32 {
+		let Wire { from, to } = self;
+		let dx = u32::from(from.x.max(to.x) - from.x.min(to.x));
+		let dy = u32::from(from.y.max(to.y) - from.y.min(to.y));
+		dx * dx + dy * dy
+	}
 }
 
 impl Serialize for Wire {
