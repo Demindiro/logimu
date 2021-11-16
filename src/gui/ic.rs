@@ -1,7 +1,7 @@
 use super::*;
 use crate::circuit::Direction;
 
-use eframe::egui::{paint::RectShape, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
+use eframe::egui::{paint::RectShape, Painter, Pos2, Rect, Shape, Vec2};
 
 #[typetag::serde]
 impl ComponentPlacer for Ic {

@@ -391,7 +391,7 @@ where
 	fn next(&mut self) -> Option<Self::Item> {
 		loop {
 			let (wh, (w, nh)) = self.iter.next()?;
-			if self.aabb.intersect_point(w.from) || self.aabb.intersect_point(w.to) {
+			if self.aabb.intersect_line(w.from, w.to) {
 				return Some((w, WireHandle(wh), *nh));
 			}
 		}

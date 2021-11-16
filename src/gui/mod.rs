@@ -17,7 +17,7 @@ use log::*;
 use script::*;
 
 use crate::circuit;
-use crate::circuit::{CircuitComponent, Direction, Ic, PointOffset, WireHandle};
+use crate::circuit::{Aabb, CircuitComponent, Direction, Ic, PointOffset, WireHandle};
 use crate::simulator;
 
 use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
@@ -484,11 +484,17 @@ impl epi::App for App {
 				allow_place_wire &= !hover_on_component | hover_on_port;
 			}
 
+			// Check if we're hovering over a wire
+			let mut wires = Vec::new();
+			if let Some(p) = hover_pos.map(pos2point) {
+				for (.., h) in self.circuit.wires(Aabb::new(p, p)) {
+					(!wires.contains(&h)).then(|| wires.push(h));
+				}
+			}
+
 			// Draw existing wires
 			for (w, wh, h) in self.circuit.wires(aabb) {
-				let intersects = e
-					.hover_pos()
-					.map_or(false, |p| w.intersect_point(pos2point(p)));
+				let intersects = wires.contains(&h);
 				let stroke = match intersects {
 					true => Stroke::new(3.0, Color32::YELLOW),
 					_ => Stroke::new(
