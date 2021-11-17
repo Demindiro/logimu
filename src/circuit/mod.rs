@@ -51,143 +51,134 @@ where
 {
 	/// Add a new wire to this circuit. The wire must not be zero-length.
 	pub fn add_wire(&mut self, wire: Wire) {
-		if wire.from == wire.to {
-			return;
-		}
+		// Add the wire piece-wise, merging & splitting other wires as needed.
+		let it = wire.segments();
+		let (min, max) = wire.into();
 
-		// Add wire to existing nexus if it connects with one.
-		// Otherwise create a new nexus and add the wire to it.
-		let mut nexus = None;
-
-		let mut wires = Vec::new();
-		let mut merge = |slf: &mut Self, n| {
-			if let Some(nexus) = nexus {
-				if nexus != n {
-					slf.graph
-						.merge_nexuses(nexus, n, |keep, merge| {
-							merge.iter().for_each(|&i| slf.wires[i.0].1 = nexus);
-							keep.extend(merge);
-						})
-						.unwrap();
-				}
-			} else {
-				nexus = Some(n);
-			}
+		let ins_w = |slf: &mut Self, wire, nexus| {
+			let h = WireHandle(slf.wires.insert((wire, nexus)));
+			slf.graph.nexus_mut(nexus).unwrap().userdata.push(h);
+		};
+		let merge = |slf: &mut Self, keep, merge| {
+			slf.graph
+				.merge_nexuses(keep, merge, |kp, mrg| {
+					mrg.iter().for_each(|&i| slf.wires[i.0].1 = keep);
+					kp.extend(mrg);
+				})
+				.unwrap();
 		};
 
-		// Split other wires based on this wire's endpoints.
-		for p in [wire.from, wire.to] {
-			for (.., n) in self.wires(Aabb::new(p, p)) {
-				merge(self, n);
-				break;
-			}
-			for (_, (w, _)) in self.wires.iter_mut() {
-				if (p != w.from && p != w.to) && w.intersect_point(p) {
-					wires.push(Wire { from: p, to: w.to });
-					w.to = p;
+		// Split the wires at the endpoints
+		let mut nexuses = Vec::new();
+		for p in [min, max] {
+			// TODO avoid allocation
+			for (w, h, nh) in self.wires(Aabb::new(p, p)).collect::<Vec<_>>() {
+				(!nexuses.contains(&nh)).then(|| nexuses.push(nh));
+				let (a, b) = w.into();
+				if p != a && p != b {
+					self.wires[h.0].0 = Wire::new(a, p);
+					ins_w(self, Wire::new(p, b), nh);
 				}
 			}
 		}
 
-		// Split the current wire into subwires based on intersections at endpoints of
-		// other wires.
-		let mut from = wire.from;
-		for p in wire.intersecting_points() {
-			for (.., n) in self
-				.wires(Aabb::new(p, p))
-				.filter(|w| w.0.from == p || w.0.to == p)
-			{
-				merge(self, n);
-				if from != p {
-					wires.push(Wire { from, to: p });
-					from = p;
+		// Merge nexuses
+		let mut nexuses = nexuses.into_iter();
+		let nexus = if let Some(nexus) = nexuses.next() {
+			nexuses.for_each(|nh| merge(self, nexus, nh));
+			nexus
+		} else {
+			self.graph.new_nexus(Default::default())
+		};
+
+		// Insert the wire, splitting it up & merging as necessary
+		for wire in it {
+			let (a, b) = wire.into();
+			let mut merged = None;
+
+			// Combine with nexus at A
+			for (i, (w, h, nh)) in self.wire_endpoints(a).enumerate() {
+				(i == 0 && merged.is_none()).then(|| merged = wire.merge(w).map(|w| (w, h)));
+				(i > 0).then(|| merged = None);
+				if nexus != nh {
+					merge(self, nexus, nh);
+					break;
 				}
-				break;
+			}
+
+			// Merge with the wire at A or add a new wire
+			if let Some((w, h)) = merged {
+				self.wires[h.0].0 = w;
+			} else {
+				ins_w(self, wire, nexus);
+			}
+
+			// Combine with nexus at B
+			if let Some((.., nh)) = self.wire_endpoints(b).next() {
+				(nexus != nh).then(|| merge(self, nexus, nh));
 			}
 		}
-		(from != wire.to).then(|| wires.push(Wire { from, to: wire.to }));
 
-		// Insert all wires
-		let nexus = nexus.unwrap_or_else(|| self.graph.new_nexus(Vec::new()));
-		for wire in wires {
-			debug_assert_ne!(wire.length_squared(), 0);
-			let handle = WireHandle(self.wires.insert((wire, nexus)));
-			self.graph.nexus_mut(nexus).unwrap().userdata.push(handle);
-		}
-
-		// Check if this wire connects with any components. If so, connect these components
-		// to this wire's nexus.
-		//self.connect_wire(None);
+		// Merge with the last wire if possible
+		self.merge_wires_at_point(max);
 	}
 
-	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), &'static str> {
-		let (wire, nexus) = self.wires.remove(handle.0).ok_or("invalid handle")?;
+	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), RemoveWireError> {
+		// Remove the wire
+		let (w, nexus) = self
+			.wires
+			.remove(handle.0)
+			.ok_or(RemoveWireError::InvalidHandle)?;
+		let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
+		l.swap_remove(l.iter().position(|&h| h == handle).unwrap());
 
-		// Remove from nexus.
-		let list = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
-		list.remove(list.iter().position(|e| *e == handle).unwrap());
-
-		// Remove nexus if it no longer has any wires.
-		if list.is_empty() {
+		// Remove the nexus if no other wires are part of it.
+		if l.is_empty() {
 			self.graph.remove_nexus(nexus).unwrap();
-		} else {
-			// Merge any (visually) continguous wires
-			let w1 = self
-				.wires(Aabb::new(wire.from, wire.from))
-				.map(|(w, h, n)| (w.clone(), h, n))
-				.collect::<Vec<_>>();
-			let w2 = self
-				.wires(Aabb::new(wire.to, wire.to))
-				.map(|(w, h, n)| (w.clone(), h, n))
-				.collect::<Vec<_>>();
-			let mut merge = |w: Vec<(Wire, WireHandle, NexusHandle)>| {
-				if let Ok([w1, w2]) = <[_; 2]>::try_from(w) {
-					if w1.0.contiguous_with(&w2.0) {
-						let Wire { from: a, to: b } = w1.0;
-						let Wire { from: c, to: d } = w2.0;
-						let lx = a.x.min(b.x).min(c.x).min(d.x);
-						let ly = a.y.min(b.y).min(c.y).min(d.y);
-						let ux = a.x.max(b.x).max(c.x).max(d.x);
-						let uy = a.y.max(b.y).max(c.y).max(d.y);
-						let (k, d, dh) = (w1.1 .0, w2.1 .0, w2.1);
-						self.wires[k].0 = Wire::new(Point::new(lx, ly), Point::new(ux, uy));
-						self.wires.remove(d).unwrap();
-						let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
-						l.swap_remove(l.iter().position(|e| *e == dh).unwrap());
-					}
-				}
-			};
-			merge(w1);
-			merge(w2);
-
-			// Split nexus in 2 if it became disjoint
-			// Do this by tagging all wires starting from either endpoint.
-			let mut visited = HashSet::<WireHandle>::default();
-			let (mut rd, mut wr) = (Vec::from([wire.to]), Vec::new());
-			while !rd.is_empty() {
-				for p in rd.drain(..) {
-					for (w, h, _) in self.wires(Aabb::new(p, p)) {
-						if visited.insert(h) {
-							wr.push((w.to == p).then(|| w.from).unwrap_or(w.to));
-						}
-					}
-				}
-				mem::swap(&mut rd, &mut wr);
-			}
-
-			// Remove handles that are not found during the walk and form a new
-			// nexus with them.
-			let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
-			let l = l
-				.drain_filter(|h| !visited.contains(&h))
-				.collect::<Vec<_>>();
-			if !l.is_empty() {
-				let h = self.graph.new_nexus(l);
-				for w in self.graph.nexus_mut(h).unwrap().userdata.iter() {
-					self.wires[w.0].1 = h;
-				}
-			}
+			return Ok(());
 		}
+
+		// Merge any 2 wires at each endpoint.
+		let (min, max) = w.into();
+		let a = self.merge_wires_at_point(min);
+		let b = self.merge_wires_at_point(max);
+
+		// Check if there is a potential nexus split...
+		if !a || !b {
+			return Ok(());
+		}
+
+		// ... if so, walk one of the endpoints ...
+		let mut visited = HashSet::<WireHandle>::default();
+		let (mut rd, mut wr) = (Vec::from([min]), Vec::new());
+		while !rd.is_empty() {
+			for p in rd.drain(..) {
+				for (w, h, _) in self.wire_endpoints(p) {
+					let (min, max) = w.into();
+					if visited.insert(h) {
+						dbg!(h);
+						wr.push((min == p).then(|| max).unwrap_or(min));
+					}
+				}
+			}
+			mem::swap(&mut rd, &mut wr);
+		}
+
+		// ... and remove handles that are not found during the walk
+		// and form a new nexus with them.
+		let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
+		if l.len() == visited.len() {
+			// The nexus is not disjoint
+			return Ok(());
+		}
+		let l = l
+			.drain_filter(|h| !visited.contains(&h))
+			.collect::<Vec<_>>();
+		let h = self.graph.new_nexus(l);
+		for w in self.graph.nexus_mut(h).unwrap().userdata.iter() {
+			self.wires[w.0].1 = h;
+		}
+
 		Ok(())
 	}
 
@@ -199,6 +190,14 @@ where
 		WireIter {
 			iter: self.wires.iter(),
 			aabb,
+			_marker: std::marker::PhantomData,
+		}
+	}
+
+	pub fn wire_endpoints(&self, point: Point) -> WireEndpointIter<C> {
+		WireEndpointIter {
+			iter: self.wires.iter(),
+			point,
 			_marker: std::marker::PhantomData,
 		}
 	}
@@ -239,8 +238,9 @@ where
 
 		for (port, &ip) in ip.iter().enumerate() {
 			if let Some(ip) = p + dir * ip {
-				for (_, (w, _)) in self.wires.iter() {
-					if w.from == ip || w.to == ip {
+				for (_, &(w, _)) in self.wires.iter() {
+					let (f, t): (Point, _) = w.into();
+					if f == ip || t == ip {
 						self.graph
 							.connect(Port::Input { node: handle, port }, None)
 							.unwrap();
@@ -250,8 +250,9 @@ where
 		}
 		for (port, &op) in op.iter().enumerate() {
 			if let Some(op) = p + dir * op {
-				for (_, (w, _)) in self.wires.iter() {
-					if w.from == op || w.to == op {
+				for (_, &(w, _)) in self.wires.iter() {
+					let (f, t): (Point, _) = w.into();
+					if f == op || t == op {
 						self.graph
 							.connect(Port::Output { node: handle, port }, None)
 							.unwrap();
@@ -303,9 +304,10 @@ where
 	fn connect_wire(&mut self, _wire: Option<WireHandle>) {
 		// TODO iterating all wires is wasteful.
 		// Connect components using wire information
-		for (_, (w, nexus)) in self.wires.iter() {
+		for (_, &(w, nexus)) in self.wires.iter() {
 			// TODO handle overlapping ports (i.e. ports without wire)
-			for p in [w.from, w.to].iter() {
+			let (f, t) = w.into();
+			for p in [f, t].iter() {
 				let (mut inp, mut outp) = (None, None);
 				self.find_ports_at_internal(
 					*p,
@@ -314,15 +316,37 @@ where
 				);
 				if let Some((node, port)) = inp {
 					self.graph
-						.connect(Port::Input { node, port }, Some(*nexus))
+						.connect(Port::Input { node, port }, Some(nexus))
 						.unwrap();
 				}
 				if let Some((node, port)) = outp {
 					self.graph
-						.connect(Port::Output { node, port }, Some(*nexus))
+						.connect(Port::Output { node, port }, Some(nexus))
 						.unwrap();
 				}
 			}
+		}
+	}
+
+	/// Merge two wires at a given point if possible.
+	///
+	/// # Returns
+	///
+	/// `true` if wires endpoints were found, `false` otherwise.
+	fn merge_wires_at_point(&mut self, point: Point) -> bool {
+		let mut it = self.wire_endpoints(point);
+		match (it.next(), it.next(), it.next()) {
+			(Some((aw, ah, _)), Some((bw, bh, _)), None) => {
+				if let Some(w) = aw.merge(bw) {
+					self.wires[ah.0].0 = w;
+					let (_, nh) = self.wires.remove(bh.0).unwrap();
+					let l = &mut self.graph.nexus_mut(nh).unwrap().userdata;
+					l.swap_remove(l.iter().position(|&h| h == bh).unwrap());
+				}
+				true
+			}
+			(None, None, None) => false,
+			_ => true,
 		}
 	}
 }
@@ -460,13 +484,40 @@ impl<'a, C> Iterator for WireIter<'a, C>
 where
 	C: CircuitComponent,
 {
-	type Item = (&'a Wire, WireHandle, NexusHandle);
+	type Item = (Wire, WireHandle, NexusHandle);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		loop {
-			let (wh, (w, nh)) = self.iter.next()?;
-			if self.aabb.intersect_line(w.from, w.to) {
-				return Some((w, WireHandle(wh), *nh));
+			let (wh, &(w, nh)) = self.iter.next()?;
+			let (f, t) = w.into();
+			if self.aabb.intersect_line(f, t) {
+				return Some((w, WireHandle(wh), nh));
+			}
+		}
+	}
+}
+
+pub struct WireEndpointIter<'a, C>
+where
+	C: CircuitComponent,
+{
+	point: Point,
+	iter: crate::arena::Iter<'a, (Wire, NexusHandle)>,
+	_marker: std::marker::PhantomData<C>,
+}
+
+impl<'a, C> Iterator for WireEndpointIter<'a, C>
+where
+	C: CircuitComponent,
+{
+	type Item = (Wire, WireHandle, NexusHandle);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		loop {
+			let (wh, &(w, nh)) = self.iter.next()?;
+			let (f, t): (Point, _) = w.into();
+			if f == self.point || t == self.point {
+				return Some((w, WireHandle(wh), nh));
 			}
 		}
 	}
@@ -497,6 +548,11 @@ where
 		}
 		None
 	}
+}
+
+#[derive(Debug)]
+pub enum RemoveWireError {
+	InvalidHandle,
 }
 
 #[derive(Debug)]

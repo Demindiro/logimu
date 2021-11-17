@@ -434,7 +434,8 @@ impl epi::App for App {
 			// Draw outlines for selected wires
 			for w in self.selected_wires.iter() {
 				let (w, ..) = self.circuit.wire(*w).unwrap();
-				let (from, to) = (point2pos(w.from), point2pos(w.to));
+				let (from, to) = w.into();
+				let (from, to) = (point2pos(from), point2pos(to));
 				paint.line_segment([from, to], Stroke::new(6.0, selected_color));
 				paint.circle_filled(from, 3.0, selected_color);
 				paint.circle_filled(to, 3.0, selected_color);
@@ -530,7 +531,8 @@ impl epi::App for App {
 						self.selected_wires.push(wh);
 					}
 				}
-				let (from, to) = (point2pos(w.from), point2pos(w.to));
+				let (from, to) = w.into();
+				let (from, to) = (point2pos(from), point2pos(to));
 				paint.line_segment([from, to], stroke);
 			}
 

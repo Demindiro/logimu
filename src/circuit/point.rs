@@ -104,3 +104,15 @@ impl<'a> Deserialize<'a> for Point {
 		d.deserialize_any(T)
 	}
 }
+
+impl From<(u16, u16)> for Point {
+	fn from(t: (u16, u16)) -> Self {
+		Self::new(t.0, t.1)
+	}
+}
+
+impl From<Point> for (u16, u16) {
+	fn from(t: Point) -> Self {
+		(t.x, t.y)
+	}
+}

@@ -3,15 +3,18 @@ use core::fmt;
 use gcd::Gcd;
 use serde::{de, ser, Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The `min` point will always come before `max`.
 pub struct Wire {
-	pub from: Point,
-	pub to: Point,
+	min: Point,
+	max: Point,
 }
 
 impl Wire {
-	pub fn new(from: Point, to: Point) -> Self {
-		Self { from, to }
+	/// Create a new wire.
+	pub fn new(a: Point, b: Point) -> Self {
+		let (min, max) = (a.min(b), a.max(b));
+		Self { min: a.min(b), max: a.max(b) }
 	}
 
 	/// Check if this wire intersects with a point.
@@ -21,7 +24,7 @@ impl Wire {
 			return false;
 		}
 
-		let (x1, y1) = (i64::from(self.from.x), i64::from(self.from.y));
+		let (x1, y1) = (i64::from(self.min.x), i64::from(self.min.y));
 		let (xp, yp) = (i64::from(point.x), i64::from(point.y));
 		// Make start of line (x1, y1) the origin so b = 0
 		let (dx, dy) = self.deltas();
@@ -32,7 +35,7 @@ impl Wire {
 
 	/// Return the AABB enclosing this wire.
 	pub fn aabb(&self) -> Aabb {
-		Aabb::new(self.from, self.to)
+		Aabb::new(self.min, self.max)
 	}
 
 	/// Return the squared length of this wire.
@@ -42,22 +45,29 @@ impl Wire {
 		u32::from(dx) * u32::from(dx) + u32::from(dy) * u32::from(dy)
 	}
 
-	/// Iterator over all intersecting points on this wire.
+	/// Iterate over all intersecting points on this wire.
 	pub fn intersecting_points(&self) -> Iter {
 		let (dx, dy) = self.lengths();
 		let steps = dx.gcd(dy);
 		let (dx, dy) = self.deltas();
 		Iter {
-			point: self.from,
+			point: self.min,
 			dx: dx / i32::from(steps),
 			dy: dy / i32::from(steps),
-			steps,
+			steps: steps + 1,
 		}
 	}
 
+	/// Iterate over all the smallest segments this wire is built of.
+	pub fn segments(&self) -> IterSegments {
+		let mut iter = self.intersecting_points();
+		let min = iter.next().unwrap();
+		IterSegments { min, iter }
+	}
+
 	/// Check whether this wire is visually with another wire, i.e. dy_a / dx_a == dy_b / dx_b.
-	pub fn contiguous_with(&self, rhs: &Self) -> bool {
-		if ![self.from, self.to].contains(&rhs.from) && ![self.from, self.to].contains(&rhs.to) {
+	pub fn contiguous_with(self, rhs: Self) -> bool {
+		if ![self.min, self.max].contains(&rhs.min) && ![self.min, self.max].contains(&rhs.max) {
 			return false;
 		}
 		let (dx_a, dy_a) = self.deltas();
@@ -70,18 +80,29 @@ impl Wire {
 		i64::from(dy_a) * i64::from(dx_b) == i64::from(dy_b) * i64::from(dx_a)
 	}
 
+	/// Try max merge two wires.
+	pub fn merge(self, rhs: Self) -> Option<Self> {
+		self.contiguous_with(rhs).then(|| {
+			if self.max == rhs.min {
+				Self { min: self.min, max: rhs.max }
+			} else {
+				Self { min: rhs.min, max: self.max }
+			}
+		})
+	}
+
 	/// Return the lengths along each axis of this wire.
 	fn lengths(&self) -> (u16, u16) {
-		let Self { from, to } = self;
-		let dx = from.x.max(to.x) - from.x.min(to.x);
-		let dy = from.y.max(to.y) - from.y.min(to.y);
+		let Self { min, max } = self;
+		let dx = min.x.max(max.x) - min.x.min(max.x);
+		let dy = min.y.max(max.y) - min.y.min(max.y);
 		(dx, dy)
 	}
 
 	/// Return the deltas along each axis of this wire.
 	fn deltas(&self) -> (i32, i32) {
-		let (x1, y1) = (i32::from(self.from.x), i32::from(self.from.y));
-		let (x2, y2) = (i32::from(self.to.x), i32::from(self.to.y));
+		let (x1, y1) = (i32::from(self.min.x), i32::from(self.min.y));
+		let (x2, y2) = (i32::from(self.max.x), i32::from(self.max.y));
 		(x2 - x1, y2 - y1)
 	}
 }
@@ -93,8 +114,8 @@ impl Serialize for Wire {
 	{
 		use ser::SerializeTuple;
 		let mut s = s.serialize_tuple(2)?;
-		s.serialize_element(&self.from)?;
-		s.serialize_element(&self.to)?;
+		s.serialize_element(&self.min)?;
+		s.serialize_element(&self.max)?;
 		s.end()
 	}
 }
@@ -124,13 +145,13 @@ impl<'a> Deserialize<'a> for Wire {
 			where
 				V: de::SeqAccess<'a>,
 			{
-				let from = seq
+				let a = seq
 					.next_element()?
 					.ok_or_else(|| de::Error::invalid_length(0, &"2"))?;
-				let to = seq
+				let b = seq
 					.next_element()?
 					.ok_or_else(|| de::Error::invalid_length(1, &"2"))?;
-				Ok(Wire { from, to })
+				Ok(Wire::new(a, b))
 			}
 
 			fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
@@ -154,13 +175,37 @@ impl<'a> Deserialize<'a> for Wire {
 						}
 					}
 				}
-				let from = from.ok_or_else(|| de::Error::missing_field("from"))?;
-				let to = to.ok_or_else(|| de::Error::missing_field("to"))?;
-				Ok(Wire { from, to })
+				let a = from.ok_or_else(|| de::Error::missing_field("from"))?;
+				let b = to.ok_or_else(|| de::Error::missing_field("to"))?;
+				Ok(Wire::new(a, b))
 			}
 		}
 
 		d.deserialize_any(T)
+	}
+}
+
+impl From<((u16, u16), (u16, u16))> for Wire {
+	fn from(t: ((u16, u16), (u16, u16))) -> Self {
+		Self::new(t.0.into(), t.1.into())
+	}
+}
+
+impl From<(Point, Point)> for Wire {
+	fn from(t: (Point, Point)) -> Self {
+		Self::new(t.0, t.1)
+	}
+}
+
+impl From<Wire> for ((u16, u16), (u16, u16)) {
+	fn from(t: Wire) -> Self {
+		(t.min.into(), t.max.into())
+	}
+}
+
+impl From<Wire> for (Point, Point) {
+	fn from(t: Wire) -> Self {
+		(t.min, t.max)
 	}
 }
 
@@ -178,9 +223,91 @@ impl Iterator for Iter {
 		self.steps.checked_sub(1).map(|s| {
 			self.steps = s;
 			let p = self.point;
-			self.point.x = (i32::from(self.point.x) + self.dx).try_into().unwrap();
-			self.point.y = (i32::from(self.point.y) + self.dy).try_into().unwrap();
+			// Cast to work around overflow when steps == 0 without adding a branch.
+			self.point.x = (i32::from(self.point.x) + self.dx) as u16;
+			self.point.y = (i32::from(self.point.y) + self.dy) as u16;
 			p
 		})
+	}
+}
+
+impl ExactSizeIterator for Iter {
+	fn len(&self) -> usize {
+		self.steps.into()
+	}
+}
+
+pub struct IterSegments {
+	min: Point,
+	iter: Iter,
+}
+
+impl Iterator for IterSegments {
+	type Item = Wire;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.iter.next().map(|max| {
+			let w = Wire { min: self.min, max };
+			self.min = max;
+			w
+		})
+	}
+}
+
+impl ExactSizeIterator for IterSegments {
+	fn len(&self) -> usize {
+		self.iter.len()
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	#[test]
+	fn merge_horizontal() {
+		let a = Wire::from(((0, 1), (0, 3)));
+		let b = Wire::from(((0, 3), (0, 6)));
+		assert_eq!(Some(Wire::from(((0, 1), (0, 6)))), a.merge(b));
+	}
+
+	#[test]
+	fn merge_vertical() {
+		let a = Wire::from(((1, 0), (3, 0)));
+		let b = Wire::from(((3, 0), (6, 0)));
+		assert_eq!(Some(Wire::from(((1, 0), (6, 0)))), a.merge(b));
+	}
+
+	#[test]
+	fn merge_diagonal() {
+		// step: (2, 3)
+		// (1, 3) + 1 * (2, 3) = (3, 6)
+		// (3, 6) + 2 * (2, 3) = (7, 12)
+		let a = Wire::from(((7, 12), (3, 6)));
+		let b = Wire::from(((1, 3), (3, 6)));
+		assert_eq!(Some(Wire::from(((1, 3), (7, 12)))), a.merge(b));
+	}
+
+	#[test]
+	fn points() {
+		// step: (2, 3)
+		// (1, 3) + 3 * (2, 3) = (7, 12)
+		let mut it = Wire::from(((1, 3), (7, 12))).intersecting_points();
+		assert_eq!(it.next(), Some((1, 3).into()));
+		assert_eq!(it.next(), Some((3, 6).into()));
+		assert_eq!(it.next(), Some((5, 9).into()));
+		assert_eq!(it.next(), Some((7, 12).into()));
+		assert_eq!(it.next(), None);
+	}
+
+	#[test]
+	fn segments() {
+		// step: (2, 3)
+		// (1, 3) + 3 * (2, 3) = (7, 12)
+		let mut it = Wire::from(((1, 3), (7, 12))).segments();
+		assert_eq!(it.next(), Some(Wire::from(((1, 3), (3, 6)))));
+		assert_eq!(it.next(), Some(Wire::from(((3, 6), (5, 9)))));
+		assert_eq!(it.next(), Some(Wire::from(((5, 9), (7, 12)))));
+		assert_eq!(it.next(), None);
 	}
 }
