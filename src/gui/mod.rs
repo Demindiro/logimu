@@ -23,6 +23,7 @@ use crate::simulator;
 use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
 
 use core::any::TypeId;
+use core::fmt;
 use eframe::{egui, epi};
 use std::collections::BTreeMap;
 use std::fs;
@@ -59,6 +60,15 @@ pub enum SaveCircuitError {
 pub enum LoadCircuitError {
 	Io(io::Error),
 	Serde(ron::Error),
+}
+
+impl fmt::Display for LoadCircuitError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
+			Self::Io(e) => e.fmt(f),
+			Self::Serde(e) => e.fmt(f),
+		}
+	}
 }
 
 pub struct App {
@@ -124,7 +134,7 @@ impl App {
 		match s.load_from_file(f.clone().into()) {
 			Ok(()) => s.log.debug(format!("Loaded {:?}", f.clone())),
 			Err(e) => {
-				s.log.error(format!("Failed to load {:?}: {:?}", f, e));
+				s.log.error(format!("Failed to load {:?}: {}", f, e));
 				std::env::set_current_dir(f.parent().unwrap()).unwrap();
 			}
 		}
