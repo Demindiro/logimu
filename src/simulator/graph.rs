@@ -398,13 +398,13 @@ mod test {
 		let o0 = graph.add(Box::new(Out::new("O0", bits, 0)), ());
 		let o1 = graph.add(Box::new(Out::new("O1", bits, 1)), ());
 
-		let i0n = graph.new_nexus(());
-		let i1n = graph.new_nexus(());
-		let l0n = graph.new_nexus(());
-		let l1n = graph.new_nexus(());
-		let r0n = graph.new_nexus(());
-		let lrn = graph.new_nexus(());
-		let cpn = graph.new_nexus(());
+		let i0n = Some(graph.new_nexus(()));
+		let i1n = Some(graph.new_nexus(()));
+		let l0n = Some(graph.new_nexus(()));
+		let l1n = Some(graph.new_nexus(()));
+		let r0n = Some(graph.new_nexus(()));
+		let lrn = Some(graph.new_nexus(()));
+		let cpn = Some(graph.new_nexus(()));
 
 		graph
 			.connect(Port::Output { node: i0, port: 0 }, i0n)
