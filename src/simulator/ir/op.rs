@@ -88,10 +88,10 @@ impl fmt::Debug for IrOp {
 			IrOp::RunIc { ic, offset, inputs, outputs } => write!(
 				f,
 				"{:>3?} (runic {:>3} {:>3p} {:>3?})",
-				&inputs,
+				&outputs,
 				offset,
 				Arc::as_ptr(ic),
-				&outputs
+				&inputs,
 			),
 		}
 	}
