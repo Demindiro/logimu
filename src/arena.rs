@@ -1,5 +1,7 @@
+use core::iter::Enumerate;
 use core::mem;
 use core::ops::{Index, IndexMut};
+use core::slice;
 
 #[derive(Debug)]
 enum Entry<T> {
@@ -81,7 +83,11 @@ impl<T> Arena<T> {
 	}
 
 	pub fn iter(&self) -> Iter<T> {
-		Iter { arena: self, index: 0 }
+		Iter { iter: self.list.iter().enumerate() }
+	}
+
+	pub fn iter_mut(&mut self) -> IterMut<T> {
+		IterMut { iter: self.list.iter_mut().enumerate() }
 	}
 }
 
@@ -106,19 +112,33 @@ impl<T> IndexMut<Handle> for Arena<T> {
 }
 
 pub struct Iter<'a, T> {
-	arena: &'a Arena<T>,
-	index: usize,
+	iter: Enumerate<slice::Iter<'a, Entry<T>>>,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
 	type Item = (Handle, &'a T);
 
 	fn next(&mut self) -> Option<Self::Item> {
-		while let Some(e) = self.arena.list.get(self.index) {
-			let h = Handle(self.index);
-			self.index += 1;
+		while let Some((i, e)) = self.iter.next() {
 			if let Some(e) = e.as_occupied() {
-				return Some((h, e));
+				return Some((Handle(i), e));
+			}
+		}
+		None
+	}
+}
+
+pub struct IterMut<'a, T> {
+	iter: Enumerate<slice::IterMut<'a, Entry<T>>>,
+}
+
+impl<'a, T> Iterator for IterMut<'a, T> {
+	type Item = (Handle, &'a mut T);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		while let Some((i, e)) = self.iter.next() {
+			if let Some(e) = e.as_occupied_mut() {
+				return Some((Handle(i), e));
 			}
 		}
 		None

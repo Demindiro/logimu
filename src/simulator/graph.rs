@@ -102,8 +102,7 @@ where
 
 	pub fn new_nexus(&mut self, userdata: Un) -> NexusHandle {
 		let nexus = Nexus { inputs: Vec::new(), outputs: Vec::new(), userdata };
-		let h = NexusHandle(self.nexuses.insert(nexus));
-		h
+		NexusHandle(self.nexuses.insert(nexus))
 	}
 
 	pub fn merge_nexuses<F>(

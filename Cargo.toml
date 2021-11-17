@@ -10,6 +10,7 @@ erased-serde = "*"
 typetag = "*"
 ron = "*"
 lazy_static = "*"
+gcd = "*"
 
 [dev-dependencies]
 serde_test = "*"

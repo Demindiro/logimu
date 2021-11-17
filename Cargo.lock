@@ -584,6 +584,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
+name = "gcd"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c8763772808ee8fe3128f0fc424bed6d9942293fddbcfd595ecfa58a81fe00b"
+
+[[package]]
 name = "getrandom"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -830,6 +836,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "erased-serde",
+ "gcd",
  "lazy_static",
  "ron",
  "serde",

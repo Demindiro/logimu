@@ -1,5 +1,6 @@
 use super::{Aabb, Point};
 use core::fmt;
+use gcd::Gcd;
 use serde::{de, ser, Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
@@ -20,14 +21,13 @@ impl Wire {
 			return false;
 		}
 
-		let (x1, y1) = (i32::from(self.from.x), i32::from(self.from.y));
-		let (x2, y2) = (i32::from(self.to.x), i32::from(self.to.y));
-		let (xp, yp) = (i32::from(point.x), i32::from(point.y));
+		let (x1, y1) = (i64::from(self.from.x), i64::from(self.from.y));
+		let (xp, yp) = (i64::from(point.x), i64::from(point.y));
 		// Make start of line (x1, y1) the origin so b = 0
-		let (dx, dy) = (x2 - x1, y2 - y1);
+		let (dx, dy) = self.deltas();
 		let (dxp, dyp) = (xp - x1, yp - y1);
 		// y = ax <=> y = dy / dx * x <=> y * dx = x * dx
-		dx * dyp == dy * dxp
+		i64::from(dx) * dyp == i64::from(dy) * dxp
 	}
 
 	/// Return the AABB enclosing this wire.
@@ -38,10 +38,51 @@ impl Wire {
 	/// Return the squared length of this wire.
 	#[allow(dead_code)]
 	pub fn length_squared(&self) -> u32 {
-		let Wire { from, to } = self;
-		let dx = u32::from(from.x.max(to.x) - from.x.min(to.x));
-		let dy = u32::from(from.y.max(to.y) - from.y.min(to.y));
-		dx * dx + dy * dy
+		let (dx, dy) = self.lengths();
+		u32::from(dx) * u32::from(dx) + u32::from(dy) * u32::from(dy)
+	}
+
+	/// Iterator over all intersecting points on this wire.
+	pub fn intersecting_points(&self) -> Iter {
+		let (dx, dy) = self.lengths();
+		let steps = dx.gcd(dy);
+		let (dx, dy) = self.deltas();
+		Iter {
+			point: self.from,
+			dx: dx / i32::from(steps),
+			dy: dy / i32::from(steps),
+			steps,
+		}
+	}
+
+	/// Check whether this wire is visually with another wire, i.e. dy_a / dx_a == dy_b / dx_b.
+	pub fn contiguous_with(&self, rhs: &Self) -> bool {
+		if ![self.from, self.to].contains(&rhs.from) && ![self.from, self.to].contains(&rhs.to) {
+			return false;
+		}
+		let (dx_a, dy_a) = self.deltas();
+		let (dx_b, dy_b) = rhs.deltas();
+		//     dy_a / dx_a == dy_b / dx_b
+		// <=> dy_a * dx_b == dy_b * dx_a
+		if dx_a == 0 || dx_b == 0 {
+			return dx_a == dx_b;
+		}
+		i64::from(dy_a) * i64::from(dx_b) == i64::from(dy_b) * i64::from(dx_a)
+	}
+
+	/// Return the lengths along each axis of this wire.
+	fn lengths(&self) -> (u16, u16) {
+		let Self { from, to } = self;
+		let dx = from.x.max(to.x) - from.x.min(to.x);
+		let dy = from.y.max(to.y) - from.y.min(to.y);
+		(dx, dy)
+	}
+
+	/// Return the deltas along each axis of this wire.
+	fn deltas(&self) -> (i32, i32) {
+		let (x1, y1) = (i32::from(self.from.x), i32::from(self.from.y));
+		let (x2, y2) = (i32::from(self.to.x), i32::from(self.to.y));
+		(x2 - x1, y2 - y1)
 	}
 }
 
@@ -120,5 +161,26 @@ impl<'a> Deserialize<'a> for Wire {
 		}
 
 		d.deserialize_any(T)
+	}
+}
+
+pub struct Iter {
+	point: Point,
+	dx: i32,
+	dy: i32,
+	steps: u16,
+}
+
+impl Iterator for Iter {
+	type Item = Point;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.steps.checked_sub(1).map(|s| {
+			self.steps = s;
+			let p = self.point;
+			self.point.x = (i32::from(self.point.x) + self.dx).try_into().unwrap();
+			self.point.y = (i32::from(self.point.y) + self.dy).try_into().unwrap();
+			p
+		})
 	}
 }

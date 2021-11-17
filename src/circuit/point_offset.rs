@@ -1,5 +1,5 @@
 use super::{Direction, Point};
-use core::ops::{Add, Mul, Sub};
+use core::ops::{Add, AddAssign, Mul, Sub};
 
 #[derive(Clone, Copy, Debug)]
 pub struct PointOffset {
@@ -38,6 +38,12 @@ impl Add<PointOffset> for Point {
 		x.try_into()
 			.and_then(|x| y.try_into().map(|y| Self { x, y }))
 			.ok()
+	}
+}
+
+impl AddAssign<PointOffset> for Point {
+	fn add_assign(&mut self, rhs: PointOffset) {
+		*self = (*self + rhs).expect("overflow");
 	}
 }
 
