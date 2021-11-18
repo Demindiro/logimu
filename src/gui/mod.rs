@@ -101,6 +101,7 @@ pub struct App {
 
 	drag_component: Option<(GraphNodeHandle, PointOffset, Direction)>,
 	copied_properties: CopiedProperties,
+	circuit_offset: egui::Vec2,
 }
 
 impl App {
@@ -132,6 +133,7 @@ impl App {
 
 			drag_component: None,
 			copied_properties: Default::default(),
+			circuit_offset: Default::default(),
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
@@ -388,14 +390,24 @@ impl epi::App for App {
 		}
 
 		CentralPanel::default().show(ctx, |ui| {
+			// Scroll the window
+			let mut d = ctx.input().scroll_delta / 50.0 * 16.0;
+			ctx.input().modifiers.shift.then(|| (d.x, d.y) = (d.y, d.x));
+			self.circuit_offset += d;
+
 			use epaint::*;
-			let rect = ui.max_rect();
-			let _paint = ui.painter_at(rect);
-			let paint = ui.painter();
+			let rect = ui.max_rect().shrink2(-ui.spacing().window_padding);
+			let paint = ui.painter_at(rect);
+			//let paint = ui.painter();
+
+			// Draw a dot at each point
 			for y in (rect.min.y as u16..rect.max.y as u16).step_by(16) {
 				for x in (rect.min.x as u16..rect.max.x as u16).step_by(16) {
 					let pos = Pos2::new(f32::from(x), f32::from(y));
-					paint.circle(pos, 1.0, Color32::GRAY, Stroke::none());
+					let d = pos - rect.min - self.circuit_offset;
+					if d.x >= 0.0 && d.y >= 0.0 {
+						paint.circle(pos, 1.0, Color32::GRAY, Stroke::none());
+					}
 				}
 			}
 			let e = ui.interact(Rect::EVERYTHING, ui.id(), Sense::drag());
@@ -407,12 +419,13 @@ impl epi::App for App {
 				.and_then(|p| ui.max_rect().shrink(-8.0).contains(p).then(|| p));
 
 			let pos2point = |pos: Pos2| {
+				let pos = pos - self.circuit_offset;
 				let (x, y) = ((pos.x - rect.min.x) / 16.0, (pos.y - rect.min.y) / 16.0);
 				circuit::Point { x: x.round() as u16, y: y.round() as u16 }
 			};
 			let point2pos = |point: circuit::Point| {
 				let (x, y) = (f32::from(point.x), f32::from(point.y));
-				Pos2::new(rect.min.x + x * 16.0, rect.min.y + y * 16.0)
+				Pos2::new(rect.min.x + x * 16.0, rect.min.y + y * 16.0) + self.circuit_offset
 			};
 			let draw_aabb = |point: circuit::Point, aabb: circuit::RelativeAabb, stroke: Stroke| {
 				let delta = Vec2::new(8.0, 8.0);
@@ -614,7 +627,7 @@ impl epi::App for App {
 					let p = point.saturating_add(p);
 					let (c, ..) = self.circuit.component(h).unwrap();
 					c.draw(
-						paint,
+						&paint,
 						move_alpha,
 						point2pos(p),
 						d,
