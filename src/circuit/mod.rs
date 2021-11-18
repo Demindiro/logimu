@@ -120,62 +120,66 @@ where
 		}
 
 		// Merge with the last wire if possible
-		self.merge_wires_at_point(max);
+		self.merge_wires_at_point(max, |_, _| false);
 	}
 
-	pub fn remove_wire(&mut self, handle: WireHandle) -> Result<(), RemoveWireError> {
-		// Remove the wire
-		let (w, nexus) = self
-			.wires
-			.remove(handle.0)
-			.ok_or(RemoveWireError::InvalidHandle)?;
-		let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
-		l.swap_remove(l.iter().position(|&h| h == handle).unwrap());
+	pub fn remove_wires(&mut self, handles: &[WireHandle]) -> Result<(), RemoveWireError> {
+		for &handle in handles {
+			// Remove the wire
+			let (w, nexus) = self
+				.wires
+				.remove(handle.0)
+				.ok_or(RemoveWireError::InvalidHandle)?;
+			let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
+			l.swap_remove(l.iter().position(|&h| h == handle).unwrap());
 
-		// Remove the nexus if no other wires are part of it.
-		if l.is_empty() {
-			self.graph.remove_nexus(nexus).unwrap();
-			return Ok(());
-		}
+			// Remove the nexus if no other wires are part of it.
+			if l.is_empty() {
+				self.graph.remove_nexus(nexus).unwrap();
+				continue;
+			}
 
-		// Merge any 2 wires at each endpoint.
-		let (min, max) = w.into();
-		let a = self.merge_wires_at_point(min);
-		let b = self.merge_wires_at_point(max);
+			// Merge any 2 wires at each endpoint _unless_ they are also wires to be removed.
+			let (min, max) = w.into();
+			let f = |a: &[_], e| a.contains(&e);
+			let f = |a, b| !f(&[a, b], handle) && (f(handles, a) || f(handles, b));
+			let a = self.merge_wires_at_point(min, f);
+			let b = self.merge_wires_at_point(max, f);
 
-		// Check if there is a potential nexus split...
-		if !a || !b {
-			return Ok(());
-		}
+			// Check if there is a potential nexus split...
+			if !a || !b {
+				continue;
+			}
 
-		// ... if so, walk one of the endpoints ...
-		let mut visited = HashSet::<WireHandle>::default();
-		let (mut rd, mut wr) = (Vec::from([min]), Vec::new());
-		while !rd.is_empty() {
-			for p in rd.drain(..) {
-				for (w, h, _) in self.wire_endpoints(p) {
-					let (min, max) = w.into();
-					if visited.insert(h) {
-						wr.push((min == p).then(|| max).unwrap_or(min));
+			// ... if so, walk one of the endpoints ...
+			let mut visited = HashSet::<WireHandle>::default();
+			let (mut rd, mut wr) = (Vec::from([min]), Vec::new());
+			while !rd.is_empty() {
+				for p in rd.drain(..) {
+					for (w, h, _) in self.wire_endpoints(p) {
+						let (min, max) = w.into();
+						if visited.insert(h) {
+							wr.push((min == p).then(|| max).unwrap_or(min));
+						}
 					}
 				}
+				mem::swap(&mut rd, &mut wr);
 			}
-			mem::swap(&mut rd, &mut wr);
-		}
 
-		// ... and remove handles that are not found during the walk
-		// and form a new nexus with them.
-		let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
-		if l.len() == visited.len() {
-			// The nexus is not disjoint
-			return Ok(());
-		}
-		let l = l
-			.drain_filter(|h| !visited.contains(&h))
-			.collect::<Vec<_>>();
-		let h = self.graph.new_nexus(l);
-		for w in self.graph.nexus_mut(h).unwrap().userdata.iter() {
-			self.wires[w.0].1 = h;
+			// ... and remove handles that are not found during the walk
+			// and form a new nexus with them.
+			let l = &mut self.graph.nexus_mut(nexus).unwrap().userdata;
+			if l.len() == visited.len() {
+				// The nexus is not disjoint
+				continue;
+			}
+			let l = l
+				.drain_filter(|h| !visited.contains(&h))
+				.collect::<Vec<_>>();
+			let h = self.graph.new_nexus(l);
+			for w in self.graph.nexus_mut(h).unwrap().userdata.iter() {
+				self.wires[w.0].1 = h;
+			}
 		}
 
 		Ok(())
@@ -332,10 +336,16 @@ where
 	/// # Returns
 	///
 	/// `true` if wires endpoints were found, `false` otherwise.
-	fn merge_wires_at_point(&mut self, point: Point) -> bool {
+	fn merge_wires_at_point<F>(&mut self, point: Point, exclude: F) -> bool
+	where
+		F: FnOnce(WireHandle, WireHandle) -> bool,
+	{
 		let mut it = self.wire_endpoints(point);
 		match (it.next(), it.next(), it.next()) {
 			(Some((aw, ah, _)), Some((bw, bh, _)), None) => {
+				if exclude(ah, bh) {
+					return false;
+				}
 				if let Some(w) = aw.merge(bw) {
 					self.wires[ah.0].0 = w;
 					let (_, nh) = self.wires.remove(bh.0).unwrap();

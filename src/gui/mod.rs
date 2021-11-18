@@ -228,9 +228,8 @@ impl epi::App for App {
 			for c in self.selected_components.drain(..) {
 				self.circuit.remove_component(c).unwrap();
 			}
-			for w in self.selected_wires.drain(..) {
-				self.circuit.remove_wire(w).unwrap();
-			}
+			self.circuit.remove_wires(&self.selected_wires);
+			self.selected_wires.clear();
 		}
 
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
