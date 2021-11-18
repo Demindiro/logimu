@@ -44,10 +44,16 @@ impl Component for Merger {
 	) -> usize {
 		assert_eq!(outputs.len(), 1, "expected only one output");
 		let output = outputs[0];
+		if output == usize::MAX {
+			return 0;
+		}
 		let temp = mem;
 		// Clear destination
 		out(IrOp::Andi { a: output, i: 0, out: output });
 		for (&w, &r) in inputs.iter().zip(self.inputs.iter()) {
+			if w == usize::MAX {
+				continue;
+			}
 			let r = r.get();
 			if r.count_ones() == r.trailing_ones() {
 				let mask = (1 << r.trailing_ones()) - 1;
