@@ -1,5 +1,6 @@
 #![feature(binary_heap_into_iter_sorted)]
 #![feature(destructuring_assignment)]
+#![feature(drain_filter)]
 #![feature(iter_advance_by)]
 #![feature(new_uninit)]
 #![feature(map_try_insert)]

@@ -25,6 +25,8 @@ struct Inner {
 	memory_size: usize,
 	inputs: Box<[PointOffset]>,
 	outputs: Box<[PointOffset]>,
+	input_names: Box<[Box<str>]>,
+	output_names: Box<[Box<str>]>,
 	input_map: Box<[usize]>,
 	output_map: Box<[usize]>,
 	path: Arc<Path>,
@@ -38,7 +40,7 @@ impl Inner {
 		let (mut inp, mut outp) = (BinaryHeap::default(), BinaryHeap::default());
 
 		#[derive(Eq, Ord)]
-		struct E(Point, usize);
+		struct E(Point, usize, Box<str>);
 
 		impl PartialEq for E {
 			fn eq(&self, rhs: &Self) -> bool {
@@ -53,21 +55,27 @@ impl Inner {
 		}
 
 		for (c, p, ..) in circuit.components(Aabb::ALL) {
-			c.external_input().map(|i| inp.push(E(p, i)));
-			c.external_output().map(|o| outp.push(E(p, o)));
+			c.external_input()
+				.map(|i| inp.push(E(p, i, c.label().unwrap_or("").into())));
+			c.external_output()
+				.map(|o| outp.push(E(p, o, c.label().unwrap_or("").into())));
 		}
 
 		let mut inputs = Vec::new();
 		let mut outputs = Vec::new();
 		let mut input_map = Vec::new();
 		let mut output_map = Vec::new();
-		for (x, E(_p, i)) in inp.into_iter_sorted().enumerate() {
+		let mut input_names = Vec::new();
+		let mut output_names = Vec::new();
+		for (x, E(_p, i, n)) in inp.into_iter_sorted().enumerate() {
 			inputs.push(PointOffset::new(-(x as i8 + 1), 0));
 			input_map.push(i);
+			input_names.push(n);
 		}
-		for (x, E(_, o)) in outp.into_iter_sorted().enumerate() {
+		for (x, E(_, o, n)) in outp.into_iter_sorted().enumerate() {
 			outputs.push(PointOffset::new(-(x as i8 + 1), 2));
 			output_map.push(o);
+			output_names.push(n);
 		}
 
 		let (ir, memory_size) = circuit.generate_ir();
@@ -79,6 +87,8 @@ impl Inner {
 			outputs: outputs.into(),
 			input_map: input_map.into(),
 			output_map: output_map.into(),
+			input_names: input_names.into(),
+			output_names: output_names.into(),
 			path: path.into(),
 		}
 	}
@@ -159,7 +169,7 @@ impl Component for Ic {
 
 	fn outputs(&self) -> Box<[OutputType]> {
 		// TODO don't hardcode bits.
-		(0..self.0.inputs.len())
+		(0..self.0.outputs.len())
 			.map(|_| OutputType { bits: core::num::NonZeroU8::new(1).unwrap() })
 			.collect()
 	}
@@ -206,6 +216,14 @@ impl CircuitComponent for Ic {
 
 	fn output_points(&self) -> Box<[PointOffset]> {
 		self.0.outputs.clone()
+	}
+
+	fn input_name(&self, index: usize) -> Box<str> {
+		self.0.input_names[index].clone()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		self.0.output_names[index].clone()
 	}
 
 	fn aabb(&self, dir: Direction) -> RelativeAabb {

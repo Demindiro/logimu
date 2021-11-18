@@ -1,26 +1,33 @@
 mod component;
+mod components_info;
+mod copy;
 mod dialog;
 mod file;
 mod gates;
 mod ic;
+mod inputs_outputs;
 mod log;
 mod script;
 
 use component::*;
+use components_info::*;
+use copy::*;
 use dialog::Dialog;
 use file::OpenDialog;
+use inputs_outputs::*;
 use log::*;
 use script::*;
 
 use crate::circuit;
-use crate::circuit::{CircuitComponent, Ic, WireHandle};
+use crate::circuit::{Aabb, CircuitComponent, Direction, Ic, PointOffset, WireHandle};
 use crate::simulator;
 
-use crate::simulator::{GraphNodeHandle, Property, PropertyValue, SetProperty};
+use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
 
 use core::any::TypeId;
+use core::fmt;
 use eframe::{egui, epi};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -57,6 +64,15 @@ pub enum LoadCircuitError {
 	Serde(ron::Error),
 }
 
+impl fmt::Display for LoadCircuitError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
+			Self::Io(e) => e.fmt(f),
+			Self::Serde(e) => e.fmt(f),
+		}
+	}
+}
+
 pub struct App {
 	dialog: Option<Box<dyn Dialog>>,
 	component: Option<Box<dyn ComponentPlacer>>,
@@ -73,14 +89,19 @@ pub struct App {
 	memory: Box<[usize]>,
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
-	property_value_buffer: Option<(Box<str>, String)>,
 
 	file_path: Box<Path>,
 
 	script_editor: ScriptEditor,
 	log: Log,
+	components_info: ComponentsInfo,
+	io_editor: InputsOutputs,
 
 	logged_parse_error: bool,
+
+	drag_component: Option<(GraphNodeHandle, PointOffset, Direction)>,
+	copied_properties: CopiedProperties,
+	circuit_offset: egui::Vec2,
 }
 
 impl App {
@@ -100,21 +121,26 @@ impl App {
 			outputs: Vec::new(),
 			memory: Box::default(),
 			needs_update: false,
-			property_value_buffer: Default::default(),
 
 			file_path: PathBuf::new().into(),
 
 			script_editor: Default::default(),
 			log: Default::default(),
+			components_info: Default::default(),
+			io_editor: Default::default(),
 
 			logged_parse_error: false,
+
+			drag_component: None,
+			copied_properties: Default::default(),
+			circuit_offset: Default::default(),
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
 		match s.load_from_file(f.clone().into()) {
 			Ok(()) => s.log.debug(format!("Loaded {:?}", f.clone())),
 			Err(e) => {
-				s.log.error(format!("Failed to load {:?}: {:?}", f, e));
+				s.log.error(format!("Failed to load {:?}: {}", f, e));
 				std::env::set_current_dir(f.parent().unwrap()).unwrap();
 			}
 		}
@@ -182,8 +208,18 @@ impl epi::App for App {
 
 		use egui::*;
 
+		// Cancel any active actions.
+		if ctx.input().key_pressed(Key::Escape) {
+			self.wire_start = None;
+			self.component = None;
+			self.drag_component = None;
+		}
+
 		if ctx.input().key_pressed(Key::R) {
 			self.component_direction = self.component_direction.rotate_clockwise();
+			self.drag_component
+				.as_mut()
+				.map(|(.., d)| *d = d.rotate_clockwise());
 		}
 
 		// Check if we should remove any selected components and/or wires
@@ -194,13 +230,9 @@ impl epi::App for App {
 			for c in self.selected_components.drain(..) {
 				self.circuit.remove_component(c).unwrap();
 			}
-			for w in self.selected_wires.drain(..) {
-				self.circuit.remove_wire(w).unwrap();
-			}
+			self.circuit.remove_wires(&self.selected_wires);
+			self.selected_wires.clear();
 		}
-
-		self.script_editor.show(ctx, &mut self.circuit);
-		self.log.show(ctx);
 
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
 
@@ -277,6 +309,22 @@ impl epi::App for App {
 			r.map(|r| r.inner.map(|r| r.then(|| self.dialog = None)));
 		}
 
+		self.script_editor.show(ctx, &mut self.circuit);
+		self.log.show(ctx);
+
+		// If one of the selected components has an external input, allow modifying it.
+		let (mut ei, mut eo) = (Vec::new(), Vec::new());
+		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
+			if let Some(i) = c.external_input() {
+				ei.push((c.label().unwrap_or_default(), i));
+			}
+			if let Some(o) = c.external_output() {
+				eo.push((c.label().unwrap_or_default(), o));
+			}
+		}
+		self.io_editor
+			.show(ctx, &ei, &eo, &mut self.inputs, &self.outputs);
+
 		let show_components = |ui: &mut Ui| {
 			ui.heading("Components");
 
@@ -310,143 +358,74 @@ impl epi::App for App {
 					self.component = Some(Box::new(ic.clone()));
 				}
 			}
-
-			ui.separator();
-
-			// If one of the selected components has an external input, allow modifying it.
-			let mut sep = false;
-			for c in self.selected_components.iter() {
-				let (c, ..) = self.circuit.component(*c).unwrap();
-				if let Some(i) = c.external_input() {
-					(!sep).then(|| ui.label("Input value"));
-					let mut n = self.inputs[i] as isize;
-					ui.add(DragValue::new(&mut n));
-					if n != self.inputs[i] as isize {
-						self.inputs[i] = n as usize;
-					}
-					sep = true;
-				}
-			}
-			sep.then(|| ui.separator());
-
-			let mut changed = Vec::new();
-			let mut show_properties = |props: Vec<Property>| {
-				let mut errors = Vec::new();
-				let mut prop_buf = self.property_value_buffer.take();
-				for prop in props {
-					// Capitalize the name
-					let name = prop
-						.name
-						.chars()
-						.enumerate()
-						.map(|(i, c)| (i == 0).then(|| c.to_ascii_uppercase()).unwrap_or(c))
-						.collect::<String>();
-					match prop.value {
-						PropertyValue::Int { value, range } => {
-							let mut v = value;
-							ui.add(Slider::new(&mut v, range.clone()).text(name));
-							if v != value {
-								changed.push((prop.name.clone(), SetProperty::Int(v)));
-							}
-						}
-						PropertyValue::Str { value } => {
-							let mut value = value.to_string();
-							if ui
-								.add(TextEdit::singleline(&mut value).hint_text(name))
-								.changed()
-							{
-								changed.push((prop.name, SetProperty::Str(value.into())));
-							}
-						}
-						PropertyValue::Mask { value } => {
-							let (mut text, modify) = match prop_buf.take() {
-								Some((name, buf)) if name == prop.name => (buf, true),
-								pb => {
-									prop_buf = pb;
-									(mask_to_string(value), false)
-								}
-							};
-							let te = TextEdit::singleline(&mut text).hint_text(name);
-							if ui.add(te).has_focus() {
-								self.property_value_buffer = Some((prop.name, text));
-							} else if modify {
-								match string_to_mask(&text) {
-									Ok(mask) => changed.push((prop.name, SetProperty::Mask(mask))),
-									Err(e) => errors.push(e),
-								}
-							}
-						}
-					}
-				}
-				errors
-			};
-
-			if let Some(c) = self.component.as_mut() {
-				show_properties(c.properties().into())
-					.into_iter()
-					.for_each(|e| self.log.error(e));
-				for (name, value) in changed {
-					let _ = c
-						.set_property(&name, value)
-						.map_err(|e| self.log.error(e.to_string()));
-				}
-			} else {
-				// Only show common properties
-				let mut it = self.selected_components.iter();
-				let mut props: Vec<_> = it
-					.next()
-					.map(|&h| self.circuit.component(h).unwrap().0.properties())
-					.unwrap_or_default()
-					.into();
-				for &h in it {
-					let c = self.circuit.component(h).unwrap().0.properties();
-					let mut common = Vec::new();
-					for p in props {
-						c.iter().find(|e| e.name == p.name).map(|_| common.push(p));
-					}
-					props = common;
-				}
-				show_properties(props.into())
-					.into_iter()
-					.for_each(|e| self.log.error(e.to_string()));
-				for (name, value) in changed {
-					for &h in self.selected_components.iter() {
-						let c = self.circuit.component_mut(h).unwrap().0;
-						let _ = c
-							.set_property(&name, value.clone())
-							.map_err(|e| self.log.error(e.to_string()));
-					}
-				}
-			}
 		};
-		egui::SidePanel::left("components").show(ctx, |ui| {
+
+		egui::SidePanel::left("components_list").show(ctx, |ui| {
 			egui::ScrollArea::vertical().show(ui, show_components)
 		});
 
+		// Show component properties
+		if let Some(c) = self.component.as_mut() {
+			let changed = self.components_info.show(ctx, &[c], &mut self.log);
+			for (name, value) in changed {
+				if let Err(e) = c.set_property(&name, value) {
+					self.log.error(e.to_string());
+				}
+			}
+		} else {
+			let c = self
+				.selected_components
+				.iter()
+				.map(|&h| self.circuit.component(h).unwrap().0)
+				.collect::<Vec<_>>();
+			let changed = self.components_info.show(ctx, &c, &mut self.log);
+			for (name, value) in changed {
+				for &h in self.selected_components.iter() {
+					let c = self.circuit.component_mut(h).unwrap().0;
+					if let Err(e) = c.set_property(&name, value.clone()) {
+						self.log.error(e.to_string());
+					}
+				}
+			}
+		}
+
 		CentralPanel::default().show(ctx, |ui| {
+			// Scroll the window
+			let mut d = ctx.input().scroll_delta / 50.0 * 16.0;
+			ctx.input().modifiers.shift.then(|| (d.x, d.y) = (d.y, d.x));
+			self.circuit_offset += d;
+
 			use epaint::*;
-			let rect = ui.max_rect();
-			let _paint = ui.painter_at(rect);
-			let paint = ui.painter();
+			let rect = ui.max_rect().shrink2(-ui.spacing().window_padding);
+			let paint = ui.painter_at(rect);
+			//let paint = ui.painter();
+
+			// Draw a dot at each point
 			for y in (rect.min.y as u16..rect.max.y as u16).step_by(16) {
 				for x in (rect.min.x as u16..rect.max.x as u16).step_by(16) {
 					let pos = Pos2::new(f32::from(x), f32::from(y));
-					paint.circle(pos, 1.0, Color32::GRAY, Stroke::none());
+					let d = pos - rect.min - self.circuit_offset;
+					if d.x >= 0.0 && d.y >= 0.0 {
+						paint.circle(pos, 1.0, Color32::GRAY, Stroke::none());
+					}
 				}
 			}
-			let e = ui.interact(ui.max_rect(), ui.id(), Sense::drag());
-			let color = e
-				.dragged_by(PointerButton::Primary)
-				.then(|| Color32::RED)
-				.unwrap_or(Color32::GREEN);
+			let e = ui.interact(Rect::EVERYTHING, ui.id(), Sense::drag());
+			let hover_pos = ctx
+				.input()
+				.pointer
+				.hover_pos()
+				// Shrink as I haven't figured out how to get rid of the padding.
+				.and_then(|p| ui.max_rect().shrink(-8.0).contains(p).then(|| p));
 
 			let pos2point = |pos: Pos2| {
+				let pos = pos - self.circuit_offset;
 				let (x, y) = ((pos.x - rect.min.x) / 16.0, (pos.y - rect.min.y) / 16.0);
 				circuit::Point { x: x.round() as u16, y: y.round() as u16 }
 			};
 			let point2pos = |point: circuit::Point| {
 				let (x, y) = (f32::from(point.x), f32::from(point.y));
-				Pos2::new(rect.min.x + x * 16.0, rect.min.y + y * 16.0)
+				Pos2::new(rect.min.x + x * 16.0, rect.min.y + y * 16.0) + self.circuit_offset
 			};
 			let draw_aabb = |point: circuit::Point, aabb: circuit::RelativeAabb, stroke: Stroke| {
 				let delta = Vec2::new(8.0, 8.0);
@@ -458,6 +437,7 @@ impl epi::App for App {
 
 			let wire_stroke = Stroke::new(3.0, Color32::WHITE);
 			let selected_color = Color32::LIGHT_BLUE.linear_multiply(0.5);
+			let move_alpha = 0.5;
 
 			let aabb = circuit::Aabb::new(pos2point(rect.min), pos2point(rect.max));
 
@@ -468,27 +448,48 @@ impl epi::App for App {
 			}
 
 			// Draw outlines for selected wires
+			let mut endpoints = HashSet::new();
 			for w in self.selected_wires.iter() {
+				let radius = 1.5;
+				let offt = 1.0;
 				let (w, ..) = self.circuit.wire(*w).unwrap();
-				let (from, to) = (point2pos(w.from), point2pos(w.to));
-				paint.line_segment([from, to], Stroke::new(6.0, selected_color));
-				paint.circle_filled(from, 3.0, selected_color);
-				paint.circle_filled(to, 3.0, selected_color);
+				let (min, max) = w.into();
+				let stroke = Stroke::new((radius + offt) * 2.0, selected_color);
+				paint.line_segment([point2pos(min), point2pos(max)], stroke);
+
+				// Draw a circle to avoid disjoint-looking wires.
+				// Use a bigger circle to indicate intersections.
+				for p in [min, max] {
+					if endpoints.insert(p) {
+						let r = self.circuit.wire_endpoints(p).count() > 2;
+						let r = radius * f32::from(1 + u8::from(r) * 2) + offt;
+						paint.circle_filled(point2pos(p), r, selected_color);
+					}
+				}
 			}
 
 			// Draw existing components
 			let mut hover_box = None;
+			let mut allow_place_wire = true;
+			let mut hover_component = None;
+			let shift = ctx.input().modifiers.shift_only();
 			for (c, p, d, h) in self.circuit.components(aabb) {
-				c.draw(&paint, point2pos(p), d, &self.inputs, &self.outputs);
+				// Don't draw components that are being moved
+				if !shift && self.drag_component.map_or(false, |(c, ..)| c == h) {
+					continue;
+				}
+
+				c.draw(&paint, 1.0, point2pos(p), d, &self.inputs, &self.outputs);
 				let aabb = c.aabb(d);
 				let delta = Vec2::new(8.0, 8.0);
-				let (min, max) = ((p + aabb.min).unwrap(), (p + aabb.max).unwrap());
+				let (min, max) = (p.saturating_add(aabb.min), p.saturating_add(aabb.max));
 				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
 				let rect = Rect { min, max };
-				if e.hover_pos().map_or(false, |p| rect.contains(p)) {
+				let hover_on_component = hover_pos.map_or(false, |p| rect.contains(p));
+				if hover_on_component {
 					// Draw a box around the component
-					hover_box = Some(rect);
-					if e.clicked_by(PointerButton::Secondary) {
+					(hover_box, hover_component) = (Some(rect), Some(h));
+					if !shift && e.clicked_by(PointerButton::Secondary) {
 						// Mark the component as selected, or unselect if already selected.
 						if let Some(i) = self.selected_components.iter().position(|e| e == &h) {
 							self.selected_components.remove(i);
@@ -502,28 +503,65 @@ impl epi::App for App {
 							.map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
 					}
 				}
-				for &po in c
+				let mut hover_on_port = false;
+				for ((i, &po), is_in) in c
 					.input_points()
-					.into_iter()
-					.chain(c.output_points().into_iter())
+					.iter()
+					.enumerate()
+					.map(|po| (po, true))
+					.chain(c.output_points().iter().enumerate().map(|po| (po, false)))
 				{
-					(p + d * po).map(|p| paint.circle_filled(point2pos(p), 2.0, Color32::GREEN));
+					if let Some(p) = p + d * po {
+						paint.circle_filled(point2pos(p), 2.0, Color32::GREEN);
+						if hover_pos.map_or(false, |h| pos2point(h) == p) {
+							hover_on_port = true;
+							let name = is_in
+								.then(|| c.input_name(i))
+								.unwrap_or_else(|| c.output_name(i));
+							egui::containers::popup::show_tooltip_at(
+								ctx,
+								ui.id(),
+								Some(point2pos(p) + Vec2::new(8.0, 8.0)),
+								|ui| ui.label(name),
+							);
+						}
+					}
+				}
+				allow_place_wire &= !hover_on_component | hover_on_port;
+			}
+
+			// Copy or paste component properties
+			hover_component
+				.and_then(|h| self.circuit.component_mut(h))
+				.map(|(c, ..)| {
+					if shift && e.clicked_by(PointerButton::Primary) {
+						self.copied_properties.apply(c)
+					} else if shift && e.clicked_by(PointerButton::Secondary) {
+						self.copied_properties = c.into();
+					}
+				});
+
+			// Check if we're hovering over a wire
+			let mut wires = Vec::new();
+			if let Some(p) = hover_pos.map(pos2point) {
+				for (.., h) in self.circuit.wires(Aabb::new(p, p)) {
+					(!wires.contains(&h)).then(|| wires.push(h));
 				}
 			}
 
 			// Draw existing wires
+			let mut endpoints = HashSet::new();
 			for (w, wh, h) in self.circuit.wires(aabb) {
-				let intersects = e
-					.hover_pos()
-					.map_or(false, |p| w.intersect_point(pos2point(p)));
-				let stroke = match intersects {
-					true => Stroke::new(3.0, Color32::YELLOW),
-					_ => Stroke::new(
-						3.0,
-						[Color32::DARK_GREEN, Color32::GREEN]
-							[*self.memory.get(h.index()).unwrap_or(&0) & 1],
-					),
+				let radius = 1.5;
+				let intersects = wires.contains(&h);
+				let color = if intersects {
+					Color32::YELLOW
+				} else {
+					[Color32::DARK_GREEN, Color32::GREEN]
+						[*self.memory.get(h.index()).unwrap_or(&0) & 1]
 				};
+				let stroke = Stroke::new(radius * 2.0, color);
+				let intersects = hover_pos.map_or(false, |p| w.intersect_point(pos2point(p)));
 				if intersects && e.clicked_by(PointerButton::Secondary) {
 					// Mark the wire as selected, or unselect if already selected.
 					if let Some(i) = self.selected_wires.iter().position(|e| e == &wh) {
@@ -533,18 +571,29 @@ impl epi::App for App {
 						self.selected_wires.push(wh);
 					}
 				}
-				let (from, to) = (point2pos(w.from), point2pos(w.to));
-				paint.line_segment([from, to], stroke);
+				let (min, max) = w.into();
+				paint.line_segment([point2pos(min), point2pos(max)], stroke);
+
+				// Draw a circle to avoid disjoint-looking wires.
+				// Use a bigger circle to indicate intersections.
+				for p in [min, max] {
+					if endpoints.insert(p) {
+						let r = self.circuit.wire_endpoints(p).count() > 2;
+						let r = radius * f32::from(1 + u8::from(r) * 2);
+						paint.circle_filled(point2pos(p), r, color);
+					}
+				}
 			}
 
 			// Draw interaction objects (pointer, component, wire ...)
-			if let Some(pos) = e.hover_pos() {
+			if let Some(pos) = hover_pos {
 				let point = pos2point(pos);
 				let pos = point2pos(point);
 
 				if let Some(c) = self.component.take() {
 					c.draw(
 						&paint,
+						move_alpha,
 						pos,
 						self.component_direction,
 						&self.inputs,
@@ -561,24 +610,43 @@ impl epi::App for App {
 					} else {
 						self.component = Some(c);
 					}
-				} else {
-					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, color));
+				} else if let Some(start) = self.wire_start {
+					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, Color32::RED));
 
-					if let Some(start) = self.wire_start {
-						paint.line_segment([point2pos(start), pos], wire_stroke);
+					paint.line_segment([point2pos(start), pos], wire_stroke);
 
-						// FIXME egui for some reason thinks that the primary button is not
-						// pressed if the secondary was pressed and then released at the same
-						// time.
-						if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
-							self.circuit.add_wire(circuit::Wire::new(start, point));
-							self.wire_start = None;
-							self.needs_update = true;
-						}
-					} else {
-						if e.drag_started() && e.dragged_by(PointerButton::Primary) {
-							self.wire_start = Some(point);
-						}
+					// FIXME egui for some reason thinks that the primary button is not
+					// pressed if the secondary was pressed and then released at the same
+					// time.
+					if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
+						self.circuit.add_wire(circuit::Wire::new(start, point));
+						self.wire_start = None;
+						self.needs_update = true;
+					}
+				} else if let Some((h, p, d)) = self.drag_component {
+					let p = point.saturating_add(p);
+					let (c, ..) = self.circuit.component(h).unwrap();
+					c.draw(
+						&paint,
+						move_alpha,
+						point2pos(p),
+						d,
+						&self.inputs,
+						&self.outputs,
+					);
+					if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
+						self.drag_component = None;
+						self.circuit.move_component(h, p, d).unwrap();
+					}
+				} else if allow_place_wire {
+					paint.circle_stroke(pos, 3.0, Stroke::new(2.0, Color32::GREEN));
+					if e.drag_started() && e.dragged_by(PointerButton::Primary) {
+						self.wire_start = Some(point);
+					}
+				} else if let Some(c) = hover_component {
+					if e.drag_started() && e.dragged_by(PointerButton::Primary) {
+						let (_, p, d) = self.circuit.component(c).unwrap();
+						self.drag_component = Some((c, (p - point).unwrap(), d));
 					}
 				}
 			}
@@ -594,47 +662,4 @@ impl epi::App for App {
 			hover_box.map(|rect| paint.rect_stroke(rect, 8.0, Stroke::new(2.0, Color32::YELLOW)));
 		});
 	}
-}
-
-/// Convert a mask to a human-readable string.
-fn mask_to_string(mut mask: usize) -> String {
-	let mut s = "".to_string();
-	let (mut offt, mut comma) = (0, false);
-	while mask > 0 {
-		if mask & 1 > 0 {
-			comma.then(|| s.push(','));
-			s.extend(offt.to_string().chars());
-			let o = offt;
-			while mask & 2 > 0 {
-				mask >>= 1;
-				offt += 1;
-			}
-			if offt != o {
-				s.push('-');
-				s.extend(offt.to_string().chars());
-			}
-			comma = true;
-		}
-		mask >>= 1;
-		offt += 1;
-	}
-	s
-}
-
-/// Convert a human-readable mask string to an actual mask.
-fn string_to_mask(s: &str) -> Result<usize, String> {
-	let mut mask = 0;
-	for r in s.split(',').map(str::trim) {
-		if let Some((min, max)) = r.split_once('-') {
-			let (min, max) = (min.trim_end(), max.trim_start());
-			let min = min.parse::<u8>().map_err(|e| e.to_string())?;
-			let max = max.parse::<u8>().map_err(|e| e.to_string())?;
-			for i in min..=max {
-				mask |= 1 << i;
-			}
-		} else {
-			mask |= 1 << r.parse::<u8>().map_err(|e| e.to_string())?;
-		}
-	}
-	Ok(mask)
 }

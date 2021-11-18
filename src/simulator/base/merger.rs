@@ -7,7 +7,7 @@ use std::error::Error;
 pub struct Merger {
 	pub bits: NonZeroU8,
 	/// Mask of input bits to output bits.
-	inputs: Vec<NonZeroUsize>,
+	pub inputs: Vec<NonZeroUsize>,
 }
 
 impl Merger {

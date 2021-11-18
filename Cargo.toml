@@ -10,9 +10,13 @@ erased-serde = "*"
 typetag = "*"
 ron = "*"
 lazy_static = "*"
+gcd = "*"
 
 [dev-dependencies]
 serde_test = "*"
 
 [profile.release]
 lto = "fat"
+
+[profile.dev.package."*"]
+opt-level = 3

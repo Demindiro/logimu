@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 use core::fmt;
 use serde::{de, ser, Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, Hash)]
 pub struct Point {
 	pub x: u16,
 	pub y: u16,
@@ -102,5 +102,17 @@ impl<'a> Deserialize<'a> for Point {
 		}
 
 		d.deserialize_any(T)
+	}
+}
+
+impl From<(u16, u16)> for Point {
+	fn from(t: (u16, u16)) -> Self {
+		Self::new(t.0, t.1)
+	}
+}
+
+impl From<Point> for (u16, u16) {
+	fn from(t: Point) -> Self {
+		(t.x, t.y)
 	}
 }

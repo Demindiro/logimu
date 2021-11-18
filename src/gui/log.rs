@@ -19,6 +19,7 @@ impl Log {
 		let mut open = self.open;
 		egui::Window::new("Log").open(&mut open).show(ctx, |ui| {
 			egui::ScrollArea::vertical()
+				.stick_to_bottom()
 				.max_width(f32::INFINITY)
 				.show(ui, |ui| {
 					for (t, m) in self.entries.iter() {
@@ -75,7 +76,7 @@ impl Tag {
 		match self {
 			Self::Success => Color32::LIGHT_GREEN,
 			Self::Error => Color32::RED,
-			Self::Debug => Color32::LIGHT_GRAY,
+			Self::Debug => Color32::GRAY,
 		}
 	}
 }
