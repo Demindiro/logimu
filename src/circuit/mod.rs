@@ -156,7 +156,6 @@ where
 				for (w, h, _) in self.wire_endpoints(p) {
 					let (min, max) = w.into();
 					if visited.insert(h) {
-						dbg!(h);
 						wr.push((min == p).then(|| max).unwrap_or(min));
 					}
 				}

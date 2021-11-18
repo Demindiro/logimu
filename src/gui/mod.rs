@@ -1,5 +1,6 @@
 mod component;
 mod components_info;
+mod copy;
 mod dialog;
 mod file;
 mod gates;
@@ -10,6 +11,7 @@ mod script;
 
 use component::*;
 use components_info::*;
+use copy::*;
 use dialog::Dialog;
 use file::OpenDialog;
 use inputs_outputs::*;
@@ -98,6 +100,7 @@ pub struct App {
 	logged_parse_error: bool,
 
 	drag_component: Option<(GraphNodeHandle, PointOffset, Direction)>,
+	copied_properties: CopiedProperties,
 }
 
 impl App {
@@ -128,6 +131,7 @@ impl App {
 			logged_parse_error: false,
 
 			drag_component: None,
+			copied_properties: Default::default(),
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
@@ -456,9 +460,10 @@ impl epi::App for App {
 			let mut hover_box = None;
 			let mut allow_place_wire = true;
 			let mut hover_component = None;
+			let shift = ctx.input().modifiers.shift_only();
 			for (c, p, d, h) in self.circuit.components(aabb) {
 				// Don't draw components that are being moved
-				if self.drag_component.map_or(false, |(c, ..)| c == h) {
+				if !shift && self.drag_component.map_or(false, |(c, ..)| c == h) {
 					continue;
 				}
 
@@ -472,7 +477,7 @@ impl epi::App for App {
 				if hover_on_component {
 					// Draw a box around the component
 					(hover_box, hover_component) = (Some(rect), Some(h));
-					if e.clicked_by(PointerButton::Secondary) {
+					if !shift && e.clicked_by(PointerButton::Secondary) {
 						// Mark the component as selected, or unselect if already selected.
 						if let Some(i) = self.selected_components.iter().position(|e| e == &h) {
 							self.selected_components.remove(i);
@@ -512,6 +517,17 @@ impl epi::App for App {
 				}
 				allow_place_wire &= !hover_on_component | hover_on_port;
 			}
+
+			// Copy or paste component properties
+			hover_component
+				.and_then(|h| self.circuit.component_mut(h))
+				.map(|(c, ..)| {
+					if shift && e.clicked_by(PointerButton::Primary) {
+						self.copied_properties.apply(c)
+					} else if shift && e.clicked_by(PointerButton::Secondary) {
+						self.copied_properties = c.into();
+					}
+				});
 
 			// Check if we're hovering over a wire
 			let mut wires = Vec::new();
