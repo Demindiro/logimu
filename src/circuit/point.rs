@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 use core::fmt;
 use serde::{de, ser, Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, Hash)]
 pub struct Point {
 	pub x: u16,
 	pub y: u16,

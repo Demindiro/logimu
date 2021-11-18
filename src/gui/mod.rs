@@ -25,7 +25,7 @@ use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
 use core::any::TypeId;
 use core::fmt;
 use eframe::{egui, epi};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -432,13 +432,24 @@ impl epi::App for App {
 			}
 
 			// Draw outlines for selected wires
+			let mut endpoints = HashSet::new();
 			for w in self.selected_wires.iter() {
+				let radius = 1.5;
+				let offt = 1.0;
 				let (w, ..) = self.circuit.wire(*w).unwrap();
-				let (from, to) = w.into();
-				let (from, to) = (point2pos(from), point2pos(to));
-				paint.line_segment([from, to], Stroke::new(6.0, selected_color));
-				paint.circle_filled(from, 3.0, selected_color);
-				paint.circle_filled(to, 3.0, selected_color);
+				let (min, max) = w.into();
+				let stroke = Stroke::new((radius + offt) * 2.0, selected_color);
+				paint.line_segment([point2pos(min), point2pos(max)], stroke);
+
+				// Draw a circle to avoid disjoint-looking wires.
+				// Use a bigger circle to indicate intersections.
+				for p in [min, max] {
+					if endpoints.insert(p) {
+						let r = self.circuit.wire_endpoints(p).count() > 2;
+						let r = radius * f32::from(1 + u8::from(r) * 2) + offt;
+						paint.circle_filled(point2pos(p), r, selected_color);
+					}
+				}
 			}
 
 			// Draw existing components
@@ -511,16 +522,17 @@ impl epi::App for App {
 			}
 
 			// Draw existing wires
+			let mut endpoints = HashSet::new();
 			for (w, wh, h) in self.circuit.wires(aabb) {
+				let radius = 1.5;
 				let intersects = wires.contains(&h);
-				let stroke = match intersects {
-					true => Stroke::new(3.0, Color32::YELLOW),
-					_ => Stroke::new(
-						3.0,
-						[Color32::DARK_GREEN, Color32::GREEN]
-							[*self.memory.get(h.index()).unwrap_or(&0) & 1],
-					),
+				let color = if intersects {
+					Color32::YELLOW
+				} else {
+					[Color32::DARK_GREEN, Color32::GREEN]
+						[*self.memory.get(h.index()).unwrap_or(&0) & 1]
 				};
+				let stroke = Stroke::new(radius * 2.0, color);
 				let intersects = hover_pos.map_or(false, |p| w.intersect_point(pos2point(p)));
 				if intersects && e.clicked_by(PointerButton::Secondary) {
 					// Mark the wire as selected, or unselect if already selected.
@@ -531,9 +543,18 @@ impl epi::App for App {
 						self.selected_wires.push(wh);
 					}
 				}
-				let (from, to) = w.into();
-				let (from, to) = (point2pos(from), point2pos(to));
-				paint.line_segment([from, to], stroke);
+				let (min, max) = w.into();
+				paint.line_segment([point2pos(min), point2pos(max)], stroke);
+
+				// Draw a circle to avoid disjoint-looking wires.
+				// Use a bigger circle to indicate intersections.
+				for p in [min, max] {
+					if endpoints.insert(p) {
+						let r = self.circuit.wire_endpoints(p).count() > 2;
+						let r = radius * f32::from(1 + u8::from(r) * 2);
+						paint.circle_filled(point2pos(p), r, color);
+					}
+				}
 			}
 
 			// Draw interaction objects (pointer, component, wire ...)

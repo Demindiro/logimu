@@ -47,8 +47,12 @@ impl Wire {
 
 	/// Iterate over all intersecting points on this wire.
 	pub fn intersecting_points(&self) -> Iter {
-		let (dx, dy) = self.lengths();
-		let steps = dx.gcd(dy);
+		let steps = match self.lengths() {
+			(0, 0) => return Iter { point: self.min, dx: 0, dy: 0, steps: 1 },
+			(dx, 0) => dx,
+			(0, dy) => dy,
+			(dx, dy) => dx.gcd(dy),
+		};
 		let (dx, dy) = self.deltas();
 		Iter {
 			point: self.min,
