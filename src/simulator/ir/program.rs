@@ -1,6 +1,7 @@
 use super::super::NexusHandle;
 use crate::integer_set::IntegerSet;
 use core::{fmt, mem};
+use std::sync::Arc;
 use thin_dst::ThinArc;
 
 #[derive(Debug)]
@@ -9,6 +10,7 @@ pub(crate) struct Node {
 	pub(crate) ir: Box<[IrOp]>,
 }
 
+#[derive(Debug, Default)]
 pub struct Program {
 	/// All nodes that can affect the circuit.
 	pub(crate) nodes: Box<[Node]>,
@@ -26,6 +28,8 @@ pub struct Program {
 
 #[derive(Debug, Default)]
 pub struct State {
+	/// The program associated with this state.
+	program: Arc<Program>,
 	/// All nodes that need an update in the next step.
 	update_dirty: IntegerSet,
 	/// A hashset that will be populated with nodes to be updated on the next step.
@@ -44,13 +48,13 @@ impl State {
 	/// # Panics
 	///
 	/// The inputs slice doesn't match the actual amount of inputs.
-	pub fn write_inputs(&mut self, program: &Program, inputs: &[Value]) {
+	pub fn write_inputs(&mut self, inputs: &[Value]) {
 		for (i, o) in inputs.iter().enumerate() {
 			// TODO
-			if i >= program.input_map.len() {
+			if i >= self.program.input_map.len() {
 				continue;
 			}
-			let (k, mask) = program.input_map[i];
+			let (k, mask) = self.program.input_map[i];
 			if k == usize::MAX {
 				// The input doesn't map to a memory location
 				continue;
@@ -66,7 +70,7 @@ impl State {
 				_ => todo!(),
 			}
 			if dirty {
-				for &i in program.input_nodes_map[i].iter() {
+				for &i in self.program.input_nodes_map[i].iter() {
 					self.update_dirty.insert(i);
 				}
 			}
@@ -78,13 +82,13 @@ impl State {
 	/// # Panics
 	///
 	/// The outputs slice doesn't match the actual amount of outputs.
-	pub fn read_outputs(&self, program: &Program, outputs: &mut [Value]) {
+	pub fn read_outputs(&self, outputs: &mut [Value]) {
 		for (i, o) in outputs.iter_mut().enumerate() {
 			// TODO
-			if i >= program.output_map.len() {
+			if i >= self.program.output_map.len() {
 				continue;
 			}
-			let (i, mask) = program.output_map[i];
+			let (i, mask) = self.program.output_map[i];
 			*o = if i == usize::MAX {
 				Value::Floating
 			} else {
@@ -98,19 +102,40 @@ impl State {
 	/// # Panics
 	///
 	/// The nexus is invalid.
-	pub fn read_nexus(&self, program: &Program, nexus: NexusHandle) -> Value {
-		Value::Set(self.read[program.nexus_map[nexus.index()]])
+	pub fn read_nexus(&self, nexus: NexusHandle) -> Value {
+		Value::Set(self.read[self.program.nexus_map[nexus.index()]])
 	}
 
 	/// Modify this state to be compatible with a new program whilst losing as little information
 	/// as possible.
-	pub fn adapt(self, program: &Program) -> Self {
-		if program.memory_size != self.write.len() {
-			dbg!(&program.input_nodes_map, &program.nodes);
-			program.new_state()
-		} else {
-			self
+	pub fn adapt(self, program: impl Into<Arc<Program>> + AsRef<Program>) -> Self {
+		let program = program.into();
+		let mut s = program.new_state();
+		//for (&r, &w) in self.program.nexus_map.iter().zip(s.program.nexus_map.iter()) {
+		//	s.read[w] = self.read[r];
+		//}
+		for (r, w) in self.read.iter().zip(s.read.iter_mut()) {
+			*w = *r;
 		}
+		s.write.copy_from_slice(&s.read);
+		s
+	}
+
+	pub fn step(&mut self) -> usize {
+		debug_assert!(self.mark_dirty.is_empty());
+		for n in self.update_dirty.drain() {}
+		for n in 0..self.program.nodes.len() {
+			run(
+				&self.program.nodes[n].ir,
+				&self.read,
+				&mut self.write,
+				&mut self.mark_dirty,
+			);
+		}
+		self.read.copy_from_slice(&self.write);
+		mem::swap(&mut self.write, &mut self.read);
+		mem::swap(&mut self.update_dirty, &mut self.mark_dirty);
+		self.update_dirty.len()
 	}
 }
 
@@ -123,26 +148,9 @@ pub enum Value {
 }
 
 impl Program {
-	pub fn step(&self, state: &mut State) -> usize {
-		debug_assert!(state.mark_dirty.is_empty());
-		for n in state.update_dirty.drain() {
-			//}
-			//for n in 0..self.nodes.len() {
-			run(
-				&self.nodes[n].ir,
-				&state.read,
-				&mut state.write,
-				&mut state.mark_dirty,
-			);
-		}
-		state.read.copy_from_slice(&state.write);
-		mem::swap(&mut state.write, &mut state.read);
-		mem::swap(&mut state.update_dirty, &mut state.mark_dirty);
-		state.update_dirty.len()
-	}
-
-	pub fn new_state(&self) -> State {
+	pub fn new_state(self: Arc<Self>) -> State {
 		State {
+			program: self.clone(),
 			update_dirty: (0..self.nodes.len()).collect(),
 			mark_dirty: Default::default(),
 			write: (0..self.memory_size).map(|_| 0).collect(),

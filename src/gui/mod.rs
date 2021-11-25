@@ -202,12 +202,11 @@ impl epi::App for App {
 	/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
 		// TODO don't run circuit every frame
-		let program = self.circuit.generate_ir();
+		let program = std::sync::Arc::new(self.circuit.generate_ir());
 		//self.inputs.resize(program.input_count(), 0);
 		//self.outputs.resize(program.output_count(), crate::simulator::ir::Value::Floating);
-		self.program_state = mem::take(&mut self.program_state).adapt(&program);
+		self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
 		self.program_state.write_inputs(
-			&program,
 			&self
 				.inputs
 				.iter()
@@ -216,11 +215,11 @@ impl epi::App for App {
 				.collect::<Vec<_>>(),
 		);
 		for _ in 0..1024 {
-			if program.step(&mut self.program_state) == 0 {
+			if self.program_state.step() == 0 {
 				break;
 			}
 		}
-		self.program_state.read_outputs(&program, &mut self.outputs);
+		self.program_state.read_outputs(&mut self.outputs);
 
 		use egui::*;
 
@@ -574,7 +573,7 @@ impl epi::App for App {
 					Color32::YELLOW
 				} else {
 					pub use crate::simulator::ir::Value;
-					match self.program_state.read_nexus(&program, h) {
+					match self.program_state.read_nexus(h) {
 						Value::Set(v) => [Color32::DARK_GREEN, Color32::GREEN][v & 1],
 						Value::Floating => Color32::BLUE,
 						Value::Short => Color32::RED,
