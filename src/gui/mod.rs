@@ -102,6 +102,8 @@ pub struct App {
 	drag_component: Option<(GraphNodeHandle, PointOffset, Direction)>,
 	copied_properties: CopiedProperties,
 	circuit_offset: egui::Vec2,
+
+	enable_simulation: bool,
 }
 
 impl App {
@@ -134,6 +136,8 @@ impl App {
 			drag_component: None,
 			copied_properties: Default::default(),
 			circuit_offset: Default::default(),
+
+			enable_simulation: true,
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
@@ -201,26 +205,6 @@ impl epi::App for App {
 	/// Called each time the UI needs repainting, which may be many times per second.
 	/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-		// TODO don't run circuit every frame
-		let program = std::sync::Arc::new(self.circuit.generate_ir());
-		//self.inputs.resize(program.input_count(), 0);
-		//self.outputs.resize(program.output_count(), crate::simulator::ir::Value::Floating);
-		self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
-		self.program_state.write_inputs(
-			&self
-				.inputs
-				.iter()
-				.copied()
-				.map(crate::simulator::ir::Value::Set)
-				.collect::<Vec<_>>(),
-		);
-		for _ in 0..1024 {
-			if self.program_state.step() == 0 {
-				break;
-			}
-		}
-		self.program_state.read_outputs(&mut self.outputs);
-
 		use egui::*;
 
 		// Cancel any active actions.
@@ -250,6 +234,7 @@ impl epi::App for App {
 		}
 
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
+		let mut step_simulation = ctx.input().key_pressed(Key::I);
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
 			menu::bar(ui, |ui| {
@@ -302,8 +287,34 @@ impl epi::App for App {
 					}
 				});
 				self.log.open |= ui.button("Log").clicked();
+				menu::menu(ui, "Simulation", |ui| {
+					ui.checkbox(&mut self.enable_simulation, "Enabled");
+					step_simulation |= ui.button("Step").clicked();
+				});
 			});
 		});
+
+		// Run circuit
+		let program = std::sync::Arc::new(self.circuit.generate_ir());
+		self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
+		self.program_state.write_inputs(
+			&self
+				.inputs
+				.iter()
+				.copied()
+				.map(crate::simulator::ir::Value::Set)
+				.collect::<Vec<_>>(),
+		);
+		if self.enable_simulation {
+			for _ in 0..1024 {
+				if self.program_state.step() == 0 {
+					break;
+				}
+			}
+		} else if step_simulation {
+			self.program_state.step();
+		}
+		self.program_state.read_outputs(&mut self.outputs);
 
 		if save {
 			match self.save_to_file(None) {

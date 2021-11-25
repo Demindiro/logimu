@@ -118,8 +118,8 @@ impl State {
 
 	pub fn step(&mut self) -> usize {
 		debug_assert!(self.mark_dirty.is_empty());
-		//for n in self.update_dirty.drain() {
-		for n in 0..self.program.nodes.len() {
+		for n in self.update_dirty.drain() {
+			//for n in 0..self.program.nodes.len() {
 			run(
 				&self.program.nodes[n].ir,
 				&self.read,
