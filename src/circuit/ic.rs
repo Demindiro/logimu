@@ -1,5 +1,5 @@
 use super::*;
-use crate::simulator::ir;
+use crate::simulator::{GenerateIr, IrOp, Program};
 use core::cmp::Ordering;
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,7 @@ use std::fmt;
 use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use thin_dst::ThinArc;
 
 lazy_static::lazy_static! {
 	/// A collection of ICs that have been loaded, mapped to paths.
@@ -19,10 +20,8 @@ lazy_static::lazy_static! {
 	static ref ICS: Mutex<HashMap<Arc<Path>, Ic>> = Default::default();
 }
 
-#[derive(Clone)]
 struct Inner {
-	ir: Arc<[ir::IrOp]>,
-	memory_size: usize,
+	program: Program,
 	inputs: Box<[PointOffset]>,
 	outputs: Box<[PointOffset]>,
 	input_names: Box<[Box<str>]>,
@@ -78,11 +77,10 @@ impl Inner {
 			output_names.push(n);
 		}
 
-		let (ir, memory_size) = circuit.generate_ir();
+		let program = circuit.generate_ir();
 
 		Self {
-			ir: ir.into(),
-			memory_size,
+			program,
 			inputs: inputs.into(),
 			outputs: outputs.into(),
 			input_map: input_map.into(),
@@ -174,29 +172,25 @@ impl Component for Ic {
 			.collect()
 	}
 
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(ir::IrOp),
-		memory_size: usize,
-	) -> usize {
+	fn generate_ir(&self, mut gen: GenerateIr) -> usize {
 		let (mut inp, mut outp) = (Vec::new(), Vec::new());
 		for (from, &to) in self.0.input_map.iter().enumerate() {
 			inp.resize(inp.len().max(to + 1), usize::MAX);
-			inp[to] = *inputs.get(from).unwrap_or(&usize::MAX);
+			inp[to] = *gen.inputs.get(from).unwrap_or(&usize::MAX);
 		}
 		for (from, &to) in self.0.output_map.iter().enumerate() {
 			outp.resize(outp.len().max(to + 1), usize::MAX);
-			outp[to] = *outputs.get(from).unwrap_or(&usize::MAX);
+			outp[to] = *gen.outputs.get(from).unwrap_or(&usize::MAX);
 		}
-		out(ir::IrOp::RunIc {
-			ic: self.0.ir.clone().into(),
-			offset: memory_size,
-			inputs: inp.into(),
-			outputs: outp.into(),
-		});
-		self.0.memory_size
+		let mut ms = 0;
+		for n in self.0.program.nodes.iter() {
+			let ir =
+				n.ir.iter()
+					.filter_map(|op| translate_mem_op(&self.0.program, op, &mut gen, &mut ms))
+					.collect();
+			(gen.out)(ir);
+		}
+		ms
 	}
 
 	fn properties(&self) -> Box<[Property]> {
@@ -206,6 +200,53 @@ impl Component for Ic {
 	fn set_property(&mut self, _name: &str, _value: SetProperty) -> Result<(), Box<dyn Error>> {
 		Err("no properties".into())
 	}
+}
+
+/// Translate a memory address of an IC to another address for use in a larger circuit.
+fn translate_mem_op(
+	program: &Program,
+	op: &IrOp,
+	gen: &mut GenerateIr,
+	max_mem: &mut usize,
+) -> Option<IrOp> {
+	let ad = match op {
+		IrOp::CheckDirty { a, .. }
+		| IrOp::Save { out: a }
+		| IrOp::And { a }
+		| IrOp::Or { a }
+		| IrOp::Xor { a }
+		| IrOp::Copy { a } => {
+			let f = |a: &[_], &k| a.iter().position(|&(e, _)| e == k);
+			if let Some(i) = f(&program.input_map, a) {
+				gen.inputs[i]
+			} else if let Some(i) = f(&program.output_map, a) {
+				gen.outputs[i]
+			} else {
+				*max_mem = (*max_mem).max(*a + 1);
+				gen.memory_size + *a
+			}
+		}
+		IrOp::Andi { .. }
+		| IrOp::Xori { .. }
+		| IrOp::Slli { .. }
+		| IrOp::Srli { .. }
+		| IrOp::Load { .. }
+		| IrOp::Read { .. } => return Some(op.clone()),
+	};
+	if ad == usize::MAX {
+		return None;
+	}
+	let mut op = op.clone();
+	match &mut op {
+		IrOp::CheckDirty { a, node } => (*a, *node) = (ad, gen.nodes + *node),
+		IrOp::Save { out: a }
+		| IrOp::And { a }
+		| IrOp::Or { a }
+		| IrOp::Xor { a }
+		| IrOp::Copy { a } => *a = ad,
+		_ => unreachable!(),
+	}
+	Some(op)
 }
 
 #[typetag::serde]

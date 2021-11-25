@@ -20,7 +20,7 @@ pub use wire::*;
 
 use super::simulator::{
 	ir::IrOp, Component, Graph, GraphIter, GraphNodeHandle, InputType, NexusHandle, OutputType,
-	Port, Property, RemoveError, SetProperty,
+	Port, Program, Property, RemoveError, SetProperty,
 };
 use crate::arena::{Arena, Handle};
 use core::{fmt, mem};
@@ -279,7 +279,7 @@ where
 	}
 
 	// TODO make non-mutable
-	pub fn generate_ir(&mut self) -> (Vec<IrOp>, usize) {
+	pub fn generate_ir(&mut self) -> Program {
 		self.connect_wire(None);
 		self.graph.generate_ir()
 	}

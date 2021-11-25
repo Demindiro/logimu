@@ -8,6 +8,7 @@
 mod arena;
 mod circuit;
 mod gui;
+mod integer_set;
 mod script;
 mod simulator;
 

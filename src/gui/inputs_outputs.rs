@@ -1,3 +1,4 @@
+use crate::simulator::ir::Value;
 use core::fmt;
 use eframe::egui;
 
@@ -12,7 +13,7 @@ impl InputsOutputs {
 		inputs: &[(impl fmt::Display, usize)],
 		outputs: &[(impl fmt::Display, usize)],
 		input_values: &mut [usize],
-		output_values: &[usize],
+		output_values: &[Value],
 	) {
 		if inputs.is_empty() && outputs.is_empty() {
 			return;
@@ -38,8 +39,13 @@ impl InputsOutputs {
 						if !outputs.is_empty() {
 							ui.vertical(|ui| {
 								for (l, i) in outputs.iter() {
+									let v = match output_values[*i] {
+										Value::Set(i) => i.to_string(),
+										Value::Floating => "x".to_string(),
+										Value::Short => "E".to_string(),
+									};
 									ui.horizontal(|ui| {
-										ui.add(egui::Label::new(output_values[*i]).monospace());
+										ui.add(egui::Label::new(v).monospace());
 										ui.label(l);
 									});
 								}

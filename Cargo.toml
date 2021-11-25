@@ -11,6 +11,7 @@ typetag = "*"
 ron = "*"
 lazy_static = "*"
 gcd = "*"
+thin-dst = "*"
 
 [dev-dependencies]
 serde_test = "*"

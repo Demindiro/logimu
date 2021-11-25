@@ -1,5 +1,6 @@
 use super::*;
 use crate::circuit::Direction;
+use crate::simulator::ir::Value;
 
 use eframe::egui::{paint::RectShape, Painter, Pos2, Rect, Shape, Vec2};
 
@@ -16,7 +17,7 @@ impl ComponentPlacer for Ic {
 		position: Pos2,
 		direction: Direction,
 		_inputs: &[usize],
-		_outputs: &[usize],
+		_outputs: &[Value],
 	) {
 		let aabb = self.aabb(direction);
 		let min = position + Vec2::new(aabb.min.x.into(), aabb.min.y.into()) * 16.0;

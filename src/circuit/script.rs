@@ -1,6 +1,7 @@
 use super::*;
 use crate::script::*;
-use core::cell::Cell;
+use crate::simulator::{self, ir};
+use core::cell::{Cell, RefCell};
 use core::fmt;
 use std::collections::HashMap;
 use std::error::Error;
@@ -11,8 +12,7 @@ where
 	C: CircuitComponent,
 {
 	pub fn tests(&mut self) -> Result<Vec<Test<C>>, ParseError> {
-		let (ir, _) = self.generate_ir();
-		let ir: Rc<[_]> = ir.into();
+		let program = Rc::new(self.generate_ir());
 		let mut src = self.script_source.trim_start();
 		let mut tests = Vec::new();
 		while let Some((script, s)) = SExpr::parse(src)? {
@@ -22,7 +22,7 @@ where
 					.get(1)
 					.and_then(Arg::to_value)
 					.and_then(Value::into_string)
-					.map(|_| tests.push(Test { ir: ir.clone(), circuit: self, script }));
+					.map(|_| tests.push(Test { program: program.clone(), circuit: self, script }));
 			}
 			src = s.trim_start();
 		}
@@ -34,7 +34,7 @@ pub struct Test<'a, C>
 where
 	C: CircuitComponent,
 {
-	ir: Rc<[IrOp]>,
+	program: Rc<Program>,
 	circuit: &'a Circuit<C>,
 	script: SExpr,
 }
@@ -52,12 +52,12 @@ where
 
 	pub fn run(
 		&self,
-		memory: &mut [usize],
+		state: &mut simulator::State,
 		inputs: &mut [usize],
-		outputs: &mut [usize],
+		outputs: &mut [ir::Value],
 		log: impl core::fmt::Write,
 	) -> Result<(), TestError> {
-		let (memory, inputs, outputs) = (Cell::new(memory), Cell::new(inputs), Cell::new(outputs));
+		let (state, inputs, outputs) = (RefCell::new(state), Cell::new(inputs), Cell::new(outputs));
 		let log = Cell::new(Some(log));
 		let r = Runner::new(
 			|r, s, f, e| {
@@ -90,7 +90,10 @@ where
 							if let Some(i) = c.external_output() {
 								if c.label() == Some(&label) {
 									let outp = outputs.take();
-									let value = outp[i] as i64;
+									let value = match outp[i] {
+										ir::Value::Set(o) => o,
+										_ => todo!(),
+									} as i64;
 									outputs.set(outp);
 									return Ok(Value::Int(value));
 								}
@@ -99,10 +102,10 @@ where
 						Err(format!("output '{}' not found", label).into())
 					}
 					"run" => {
-						use crate::simulator::ir::interpreter;
-						let (mem, inp, outp) = (memory.take(), inputs.take(), outputs.take());
-						interpreter::run(&self.ir, mem, inp, outp);
-						(memory.set(mem), inputs.set(inp), outputs.set(outp));
+						let (mem, inp, outp) = (state.borrow_mut(), inputs.take(), outputs.take());
+						todo!();
+						//interpreter::run(&self.ir, mem, inp, outp);
+						(inputs.set(inp), outputs.set(outp));
 						Ok(Value::None)
 					}
 					"print" => {

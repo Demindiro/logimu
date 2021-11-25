@@ -1,7 +1,7 @@
 use super::ComponentPlacer;
 use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 
-use crate::simulator::*;
+use crate::simulator::{ir::Value, *};
 use core::num::NonZeroU8;
 use eframe::egui::paint::{CircleShape, Mesh, RectShape, Rgba};
 use eframe::egui::{Align2, Color32, Painter, Pos2, Rect, Shape, Stroke, TextStyle, Vec2};
@@ -62,7 +62,7 @@ impl ComponentPlacer for AndGate {
 		pos: Pos2,
 		dir: Direction,
 		_: &[usize],
-		_: &[usize],
+		_: &[Value],
 	) {
 		let stroke = stroke(alpha);
 		let radius = 16.0;
@@ -95,7 +95,7 @@ impl ComponentPlacer for OrGate {
 		pos: Pos2,
 		dir: Direction,
 		_: &[usize],
-		_: &[usize],
+		_: &[Value],
 	) {
 		let stroke = stroke(alpha);
 
@@ -164,7 +164,7 @@ impl ComponentPlacer for XorGate {
 		pos: Pos2,
 		dir: Direction,
 		_: &[usize],
-		_: &[usize],
+		_: &[Value],
 	) {
 		let stroke = stroke(alpha);
 
@@ -268,7 +268,7 @@ impl ComponentPlacer for NotGate {
 		pos: Pos2,
 		dir: Direction,
 		_: &[usize],
-		_: &[usize],
+		_: &[Value],
 	) {
 		let stroke = stroke(alpha);
 
@@ -330,14 +330,18 @@ impl ComponentPlacer for In {
 		pos: Pos2,
 		dir: Direction,
 		inputs: &[usize],
-		_: &[usize],
+		_: &[Value],
 	) {
 		draw_in_out(
 			painter,
 			alpha,
 			pos,
 			dir,
-			inputs.get(self.index).copied(),
+			inputs
+				.get(self.index)
+				.copied()
+				.map(Value::Set)
+				.unwrap_or(Value::Floating),
 			self.bits.get(),
 			0.0,
 		)
@@ -385,14 +389,14 @@ impl ComponentPlacer for Out {
 		pos: Pos2,
 		dir: Direction,
 		_: &[usize],
-		outputs: &[usize],
+		outputs: &[Value],
 	) {
 		draw_in_out(
 			painter,
 			alpha,
 			pos,
 			dir,
-			outputs.get(self.index).copied(),
+			*outputs.get(self.index).unwrap_or(&Value::Floating),
 			self.bits.get(),
 			8.0,
 		)
@@ -419,7 +423,7 @@ fn draw_in_out(
 	alpha: f32,
 	pos: Pos2,
 	dir: Direction,
-	value: Option<usize>,
+	value: Value,
 	bits: u8,
 	corner_radius: f32,
 ) {
@@ -427,18 +431,33 @@ fn draw_in_out(
 	if bits == 1 {
 		let rect = Rect::from_center_size(pos, Vec2::new(16.0, 16.0))
 			.translate(dir.rotate_vec2(Vec2::new(8.0, 0.0)));
-		let fill = value
-			.map(|i| [Color32::DARK_GREEN, Color32::GREEN][i & 1])
-			.unwrap_or(Color32::BLUE);
+		let fill = match value {
+			Value::Set(i) => [Color32::DARK_GREEN, Color32::GREEN][i & 1],
+			Value::Floating => Color32::BLUE,
+			Value::Short => Color32::RED,
+		};
 		let fill = color_alpha(fill, alpha);
 		painter.add(Shape::Rect(RectShape { corner_radius, fill, rect, stroke }));
 	} else {
-		let mut s = String::new();
-		for i in 0..bits {
-			(i != 0 && i % 8 == 0).then(|| s.push('\n'));
-			s.push(value.map(|n| ['0', '1'][(n >> i) & 1]).unwrap_or('x'));
-		}
-		(bits > 8).then(|| s.extend((0..(64 - bits) % 8).map(|_| ' ')));
+		let s: String = (0..bits)
+			.flat_map(|i| {
+				let a = (i != 0 && i % 8 == 0)
+					.then(|| ["\n0", "\n1", "\nx", "\nE"])
+					.unwrap_or(["0", "1", "x", "E"]);
+				match value {
+					Value::Set(n) => a[(n >> i) & 1],
+					Value::Floating => a[2],
+					Value::Short => a[3],
+				}
+				.chars()
+			})
+			.chain(
+				"        "[..(bits > 8)
+					.then(|| (64 - usize::from(bits)) % 8)
+					.unwrap_or(0)]
+					.chars(),
+			)
+			.collect();
 		let x = 16.0 * 4.0;
 		let y = 16.0 * [1.0, 2.0, 3.0, 4.0][usize::from(bits - 1) >> 3];
 		let mut offt = dir.rotate_vec2(Vec2::new(8.0 * 4.0, 0.0));
@@ -504,7 +523,7 @@ impl ComponentPlacer for Splitter {
 		pos: Pos2,
 		dir: Direction,
 		inputs: &[usize],
-		outputs: &[usize],
+		outputs: &[Value],
 	) {
 		draw_merger_splitter(
 			painter,
@@ -558,7 +577,7 @@ impl ComponentPlacer for Merger {
 		pos: Pos2,
 		dir: Direction,
 		inputs: &[usize],
-		outputs: &[usize],
+		outputs: &[Value],
 	) {
 		draw_merger_splitter(
 			painter,
@@ -590,7 +609,7 @@ fn draw_merger_splitter(
 	pos: Pos2,
 	dir: Direction,
 	_inputs: &[usize],
-	_outputs: &[usize],
+	_outputs: &[Value],
 	in_pos: &[PointOffset],
 	out_pos: &[PointOffset],
 ) {
@@ -654,7 +673,7 @@ impl ComponentPlacer for Constant {
 		pos: Pos2,
 		_: Direction,
 		_: &[usize],
-		_: &[usize],
+		_: &[Value],
 	) {
 		let pad = (self.bits.get() + 3) / 4;
 		painter.text(
@@ -705,7 +724,7 @@ impl ComponentPlacer for ReadOnlyMemory {
 		pos: Pos2,
 		dir: Direction,
 		inputs: &[usize],
-		_: &[usize],
+		_: &[Value],
 	) {
 		let RelativeAabb { min, max } = self.aabb(dir);
 		let min = Vec2::new(f32::from(min.x) * 16.0, f32::from(min.y) * 16.0);

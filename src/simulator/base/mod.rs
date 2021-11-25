@@ -8,7 +8,9 @@ pub use merger::*;
 pub use rom::*;
 pub use splitter::*;
 
-use super::{Component, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty};
+use super::{
+	Component, GenerateIr, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty,
+};
 use core::fmt;
 use core::num::NonZeroU8;
 use serde::de;
@@ -93,24 +95,20 @@ macro_rules! gate {
 				[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 			}
 
-			fn generate_ir(
-				&self,
-				inputs: &[usize],
-				outputs: &[usize],
-				out: &mut dyn FnMut(IrOp),
-				_: usize,
-			) -> usize {
-				assert!(outputs.len() < 2);
-				let mut it = inputs.iter().filter(|a| **a != usize::MAX);
-				if let (Some(&output), Some(mut a)) = (outputs.first(), it.next().copied()) {
-					let mut cpy = true;
-					while let Some(&b) = it.next() {
-						out(IrOp::$op { a, b, out: output });
-						a = output;
-						cpy = false;
-					}
-					cpy.then(|| out(IrOp::Copy { a, out: output }));
+			fn generate_ir(&self, gen: GenerateIr) -> usize {
+				assert_eq!(gen.outputs.len(), 1);
+				if gen.outputs[0] == usize::MAX || gen.inputs.iter().all(|&i| i == usize::MAX) {
+					return 0;
 				}
+				let mut it = gen.inputs[..].iter().filter(|&&a| a != usize::MAX);
+				let it = it
+					.next()
+					.map(|&a| IrOp::Copy { a })
+					.into_iter()
+					.chain(it.map(|&a| IrOp::$op { a }))
+					.chain(Some(IrOp::Save { out: gen.outputs[0] }))
+					.collect();
+				(gen.out)(it);
 				0
 			}
 
@@ -160,14 +158,16 @@ impl Component for NotGate {
 		[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(IrOp),
-		_: usize,
-	) -> usize {
-		out(IrOp::Not { a: inputs[0], out: outputs[0] });
+	fn generate_ir(&self, gen: GenerateIr) -> usize {
+		if gen.inputs[0] != usize::MAX && gen.outputs[0] != usize::MAX {
+			let ir = [
+				IrOp::Copy { a: gen.inputs[0] },
+				IrOp::Xori { i: usize::MAX },
+				IrOp::Save { out: gen.outputs[0] },
+			]
+			.into();
+			(gen.out)(ir);
+		}
 		0
 	}
 
@@ -207,16 +207,7 @@ impl Component for In {
 		[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
-	fn generate_ir(
-		&self,
-		_: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(IrOp),
-		_: usize,
-	) -> usize {
-		out(IrOp::In { out: outputs[0], index: self.index });
-		let mask = (1 << self.bits.get()) - 1;
-		out(IrOp::Andi { a: outputs[0], i: mask, out: outputs[0] });
+	fn generate_ir(&self, _: GenerateIr) -> usize {
 		0
 	}
 
@@ -239,6 +230,11 @@ impl Component for In {
 			_ => Err("invalid property")?,
 		}
 		Ok(())
+	}
+
+	fn external_type(&self) -> Option<super::ExternalType> {
+		let mask = (1 << self.bits.get()) - 1;
+		Some(super::ExternalType::In(self.index, mask))
 	}
 }
 
@@ -269,15 +265,7 @@ impl Component for Out {
 		[].into()
 	}
 
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		_: &[usize],
-		out: &mut dyn FnMut(IrOp),
-		_: usize,
-	) -> usize {
-		out(IrOp::Andi { a: inputs[0], i: (1 << self.bits.get()) - 1, out: inputs[0] });
-		out(IrOp::Out { a: inputs[0], index: self.index });
+	fn generate_ir(&self, _: GenerateIr) -> usize {
 		0
 	}
 
@@ -300,6 +288,11 @@ impl Component for Out {
 			_ => Err("invalid property")?,
 		}
 		Ok(())
+	}
+
+	fn external_type(&self) -> Option<super::ExternalType> {
+		let mask = (1 << self.bits.get()) - 1;
+		Some(super::ExternalType::Out(self.index, mask))
 	}
 }
 

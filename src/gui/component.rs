@@ -1,6 +1,9 @@
 use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 use crate::impl_dyn;
-use crate::simulator::{ir::IrOp, Component, InputType, OutputType, Property, SetProperty};
+use crate::simulator::{
+	ir::Value, Component, ExternalType, GenerateIr, InputType, IrOp, OutputType, Property,
+	SetProperty,
+};
 use core::any::Any;
 use core::ops::Mul;
 use eframe::egui::{Painter, Pos2, Vec2};
@@ -39,7 +42,7 @@ where
 		position: Pos2,
 		direction: Direction,
 		inputs: &[usize],
-		outputs: &[usize],
+		outputs: &[Value],
 	);
 }
 
@@ -48,8 +51,9 @@ impl_dyn! {
 		ref label() -> Option<&str>;
 		ref inputs() -> Box<[InputType]>;
 		ref outputs() -> Box<[OutputType]>;
-		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+		ref generate_ir(gen: GenerateIr) -> usize;
 		ref properties() -> Box<[Property]>;
+		ref external_type() -> Option<ExternalType>;
 		mut set_property(name: &str, property: SetProperty) -> Result<(), Box<dyn Error>>;
 	}
 }

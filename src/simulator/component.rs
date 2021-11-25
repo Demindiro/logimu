@@ -18,19 +18,23 @@ pub trait Component {
 	fn outputs(&self) -> Box<[OutputType]>;
 
 	/// Generate IR for this component.
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(IrOp),
-		memory_size: usize,
-	) -> usize;
+	fn generate_ir(&self, generate: GenerateIr) -> usize;
 
 	/// Return all properties of this component.
 	fn properties(&self) -> Box<[Property]>;
 
 	/// Set a property of this component.
 	fn set_property(&mut self, name: &str, property: SetProperty) -> Result<(), Box<dyn Error>>;
+
+	/// Whether this component is an In, Out or regular component.
+	fn external_type(&self) -> Option<ExternalType> {
+		None
+	}
+}
+
+pub enum ExternalType {
+	In(usize, usize),
+	Out(usize, usize),
 }
 
 #[derive(Clone, Debug)]
@@ -87,8 +91,9 @@ impl_dyn! {
 	Component for Box<dyn Component> {
 		ref inputs() -> Box<[InputType]>;
 		ref outputs() -> Box<[OutputType]>;
-		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+		ref generate_ir(gen: GenerateIr) -> usize;
 		ref properties() -> Box<[Property]>;
+		ref external_type() -> Option<ExternalType>;
 		mut set_property(name: &str, value: SetProperty) -> Result<(), Box<dyn Error>>;
 	}
 }
@@ -103,4 +108,12 @@ pub struct InputType {
 pub struct OutputType {
 	/// How many bits this output has.
 	pub bits: NonZeroU8,
+}
+
+pub struct GenerateIr<'a> {
+	pub inputs: &'a [usize],
+	pub outputs: &'a [usize],
+	pub out: &'a mut dyn FnMut(Vec<IrOp>),
+	pub memory_size: usize,
+	pub nodes: usize,
 }

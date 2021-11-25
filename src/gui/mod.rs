@@ -22,10 +22,10 @@ use crate::circuit;
 use crate::circuit::{Aabb, CircuitComponent, Direction, Ic, PointOffset, WireHandle};
 use crate::simulator;
 
-use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
+use crate::simulator::{ir, GraphNodeHandle, PropertyValue, SetProperty};
 
 use core::any::TypeId;
-use core::fmt;
+use core::{fmt, mem};
 use eframe::{egui, epi};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -85,8 +85,8 @@ pub struct App {
 	selected_wires: Vec<WireHandle>,
 
 	inputs: Vec<usize>,
-	outputs: Vec<usize>,
-	memory: Box<[usize]>,
+	outputs: Vec<ir::Value>,
+	program_state: simulator::State,
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
 
@@ -119,7 +119,7 @@ impl App {
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
-			memory: Box::default(),
+			program_state: Default::default(),
 			needs_update: false,
 
 			file_path: PathBuf::new().into(),
@@ -170,8 +170,10 @@ impl App {
 		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
 			c.external_input()
 				.map(|i| self.inputs.resize((i + 1).max(self.inputs.len()), 0));
-			c.external_output()
-				.map(|i| self.outputs.resize((i + 1).max(self.outputs.len()), 0));
+			c.external_output().map(|i| {
+				self.outputs
+					.resize((i + 1).max(self.outputs.len()), ir::Value::Floating)
+			});
 		}
 
 		self.file_path = path;
@@ -200,11 +202,25 @@ impl epi::App for App {
 	/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
 		// TODO don't run circuit every frame
-		let (ir, mem_size) = self.circuit.generate_ir();
-		if mem_size != self.memory.len() {
-			self.memory = core::iter::repeat(0).take(mem_size).collect::<Box<_>>();
+		let program = self.circuit.generate_ir();
+		//self.inputs.resize(program.input_count(), 0);
+		//self.outputs.resize(program.output_count(), crate::simulator::ir::Value::Floating);
+		self.program_state = mem::take(&mut self.program_state).adapt(&program);
+		self.program_state.write_inputs(
+			&program,
+			&self
+				.inputs
+				.iter()
+				.copied()
+				.map(crate::simulator::ir::Value::Set)
+				.collect::<Vec<_>>(),
+		);
+		for _ in 0..1024 {
+			if program.step(&mut self.program_state) == 0 {
+				break;
+			}
 		}
-		simulator::ir::interpreter::run(&ir, &mut self.memory, &self.inputs, &mut self.outputs);
+		self.program_state.read_outputs(&program, &mut self.outputs);
 
 		use egui::*;
 
@@ -259,7 +275,7 @@ impl epi::App for App {
 								let mut debug = String::default();
 								if ui.button(t.name()).clicked() || run_all {
 									let res = t.run(
-										&mut self.memory,
+										&mut self.program_state,
 										&mut self.inputs,
 										&mut self.outputs,
 										&mut debug,
@@ -557,8 +573,12 @@ impl epi::App for App {
 				let color = if intersects {
 					Color32::YELLOW
 				} else {
-					[Color32::DARK_GREEN, Color32::GREEN]
-						[*self.memory.get(h.index()).unwrap_or(&0) & 1]
+					pub use crate::simulator::ir::Value;
+					match self.program_state.read_nexus(&program, h) {
+						Value::Set(v) => [Color32::DARK_GREEN, Color32::GREEN][v & 1],
+						Value::Floating => Color32::BLUE,
+						Value::Short => Color32::RED,
+					}
 				};
 				let stroke = Stroke::new(radius * 2.0, color);
 				let intersects = hover_pos.map_or(false, |p| w.intersect_point(pos2point(p)));
@@ -603,7 +623,7 @@ impl epi::App for App {
 					if e.clicked_by(PointerButton::Primary) {
 						(c.type_id() == TypeId::of::<simulator::In>()).then(|| self.inputs.push(0));
 						(c.type_id() == TypeId::of::<simulator::Out>())
-							.then(|| self.outputs.push(0));
+							.then(|| self.outputs.push(ir::Value::Floating));
 						self.circuit
 							.add_component(c, point, self.component_direction);
 						self.needs_update = true;
