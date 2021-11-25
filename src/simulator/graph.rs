@@ -263,11 +263,15 @@ where
 	/// ```
 	pub fn generate_ir(&self) -> Program {
 		// Map nexuses to memory
-		let memory_nexus_map = self.nexuses.iter().map(|(h, _)| h).collect::<Box<[_]>>();
-		let nexus_to_mem = |h: NexusHandle| memory_nexus_map.binary_search(&h.0).unwrap();
+		let nexus_to_mem = |h: NexusHandle| h.index();
 
 		// Generate IR
-		let mut memory_size = memory_nexus_map.len();
+		let mut memory_size = self
+			.nexuses
+			.iter()
+			.map(|(h, _)| h.index())
+			.max()
+			.map_or(0, |m| m + 1);
 		let mut input_map = Vec::new();
 		let mut output_map = Vec::new();
 		let mut ir = self
@@ -358,16 +362,10 @@ where
 			.into_iter()
 			.map(|(_, ir)| super::ir::Node { ir: ir.into() })
 			.collect();
-		let mut nexus_map = Vec::new();
-		for (i, &h) in memory_nexus_map.iter().enumerate() {
-			nexus_map.resize(nexus_map.len().max(h.index() + 1), usize::MAX);
-			nexus_map[h.index()] = i;
-		}
 		Program {
 			memory_size,
 			input_map: input_map.into(),
 			output_map: output_map.into(),
-			nexus_map: nexus_map.into(),
 			input_nodes_map: input_nodes_map.into(),
 			nodes,
 		}

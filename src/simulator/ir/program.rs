@@ -16,8 +16,6 @@ pub struct Program {
 	pub(crate) nodes: Box<[Node]>,
 	/// The amount of memory needed to run this program.
 	pub(crate) memory_size: usize,
-	/// Nexus to memory map.
-	pub(crate) nexus_map: Box<[usize]>,
 	/// Input & mask to nexus map.
 	pub(crate) input_map: Box<[(usize, usize)]>,
 	/// Output & mask to nexus map.
@@ -103,7 +101,7 @@ impl State {
 	///
 	/// The nexus is invalid.
 	pub fn read_nexus(&self, nexus: NexusHandle) -> Value {
-		Value::Set(self.read[self.program.nexus_map[nexus.index()]])
+		Value::Set(self.read[nexus.index()])
 	}
 
 	/// Modify this state to be compatible with a new program whilst losing as little information
@@ -111,9 +109,6 @@ impl State {
 	pub fn adapt(self, program: impl Into<Arc<Program>> + AsRef<Program>) -> Self {
 		let program = program.into();
 		let mut s = program.new_state();
-		//for (&r, &w) in self.program.nexus_map.iter().zip(s.program.nexus_map.iter()) {
-		//	s.read[w] = self.read[r];
-		//}
 		for (r, w) in self.read.iter().zip(s.read.iter_mut()) {
 			*w = *r;
 		}
@@ -123,7 +118,7 @@ impl State {
 
 	pub fn step(&mut self) -> usize {
 		debug_assert!(self.mark_dirty.is_empty());
-		for n in self.update_dirty.drain() {}
+		//for n in self.update_dirty.drain() {
 		for n in 0..self.program.nodes.len() {
 			run(
 				&self.program.nodes[n].ir,
@@ -132,6 +127,7 @@ impl State {
 				&mut self.mark_dirty,
 			);
 		}
+		self.update_dirty.drain();
 		self.read.copy_from_slice(&self.write);
 		mem::swap(&mut self.write, &mut self.read);
 		mem::swap(&mut self.update_dirty, &mut self.mark_dirty);
