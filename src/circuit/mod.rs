@@ -573,10 +573,10 @@ pub enum MoveError {
 mod test {
 	use super::*;
 	use crate::simulator::{
-		ir::interpreter, AndGate as And, In, NonZeroOneU8, NotGate as Not, OrGate as Or, Out,
-		XorGate as Xor,
+		ir, AndGate as And, In, NonZeroOneU8, NotGate as Not, OrGate as Or, Out, XorGate as Xor,
 	};
 	use core::num::NonZeroU8;
+	use std::sync::Arc;
 
 	/// ```
 	/// i0 --+-------v
@@ -654,10 +654,12 @@ mod test {
 		circuit.add_wire(Wire::new(Point::new(0, 4), Point::new(3, 9)));
 		circuit.add_wire(Wire::new(Point::new(5, 8), Point::new(16, 8)));
 
-		let (ir, _) = circuit.generate_ir();
+		let mut state = Arc::new(circuit.generate_ir()).new_state();
 		let (a, b) = (0b1100, 0b0110);
-		let mut out = [0; 2];
-		interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
-		assert_eq!(out, [a ^ b; 2]);
+		state.write_inputs(&[ir::Value::Set(a), ir::Value::Set(b)]);
+		state.run(1024);
+		let mut out = [ir::Value::Floating; 2];
+		state.read_outputs(&mut out);
+		assert_eq!(out, [ir::Value::Set(a ^ b); 2]);
 	}
 }

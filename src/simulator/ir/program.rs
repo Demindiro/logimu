@@ -149,7 +149,7 @@ impl State {
 }
 
 /// The state of an input or output.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Value {
 	Set(usize),
 	Floating,
@@ -175,7 +175,8 @@ fn run(ops: &[IrOp], rd: &[usize], wr: &mut [usize], dirty: &mut IntegerSet) {
 	for op in ops {
 		match op {
 			&IrOp::CheckDirty { a, node } => {
-				if wr[a] & 1 != rd[a] & 1 {
+				// FIXME we need masks to prevent unfixable (by user) oscillation
+				if wr[a] != rd[a] {
 					dirty.insert(node);
 				}
 			}

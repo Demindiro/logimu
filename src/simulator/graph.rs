@@ -420,9 +420,9 @@ where
 
 #[cfg(test)]
 mod test {
-	use super::super::ir::interpreter;
 	use super::*;
 	use core::num::NonZeroU8;
+	use std::sync::Arc;
 
 	/// ```
 	/// i0 --+-------v
@@ -518,10 +518,12 @@ mod test {
 			.connect(Port::Input { node: o1, port: 0 }, cpn)
 			.unwrap();
 
-		let (ir, _) = graph.generate_ir();
+		let mut state = Arc::new(graph.generate_ir()).new_state();
 		let (a, b) = (0b1100, 0b0110);
-		let mut out = [0; 2];
-		interpreter::run(&ir, &mut [0; 32], &[a, b], &mut out);
-		assert_eq!(out, [a ^ b; 2]);
+		state.write_inputs(&[ir::Value::Set(a), ir::Value::Set(b)]);
+		state.run(1024);
+		let mut out = [ir::Value::Floating; 2];
+		state.read_outputs(&mut out);
+		assert_eq!(out, [ir::Value::Set(a ^ b); 2]);
 	}
 }
