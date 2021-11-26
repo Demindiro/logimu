@@ -1,5 +1,5 @@
 use super::*;
-use crate::simulator::ir;
+use crate::simulator::{GenerateIr, IrOp, Program};
 use core::cmp::Ordering;
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
@@ -19,10 +19,8 @@ lazy_static::lazy_static! {
 	static ref ICS: Mutex<HashMap<Arc<Path>, Ic>> = Default::default();
 }
 
-#[derive(Clone)]
 struct Inner {
-	ir: Arc<[ir::IrOp]>,
-	memory_size: usize,
+	program: Program,
 	inputs: Box<[PointOffset]>,
 	outputs: Box<[PointOffset]>,
 	input_names: Box<[Box<str>]>,
@@ -78,11 +76,10 @@ impl Inner {
 			output_names.push(n);
 		}
 
-		let (ir, memory_size) = circuit.generate_ir();
+		let program = circuit.generate_ir();
 
 		Self {
-			ir: ir.into(),
-			memory_size,
+			program,
 			inputs: inputs.into(),
 			outputs: outputs.into(),
 			input_map: input_map.into(),
@@ -137,6 +134,63 @@ impl Ic {
 	pub fn path(&self) -> &Path {
 		&self.0.path
 	}
+
+	/// Translate a memory address of an IC to another address for use in a larger circuit.
+	fn translate_mem_op(
+		&self,
+		op: &IrOp,
+		gen: &mut GenerateIr,
+		max_mem: &mut usize,
+	) -> Option<IrOp> {
+		let ad = match op {
+			IrOp::CheckDirty { a, .. }
+			| IrOp::Save { out: a }
+			| IrOp::And { a }
+			| IrOp::Or { a }
+			| IrOp::Xor { a }
+			| IrOp::Copy { a }
+			| IrOp::SaveB { out: a } => {
+				let f = |a: &[_], &k, b: &[_], c: &[_]| {
+					a.iter()
+						.position(|&(e, _)| e == k)
+						.and_then(|i| b.iter().position(|&e| e == i))
+						.map(|i| c[i])
+						.filter(|&v| v != usize::MAX)
+				};
+				let Program { input_map, output_map, .. } = &self.0.program;
+				if let Some(v) = f(input_map, a, &self.0.input_map, &gen.inputs) {
+					v
+				} else if let Some(v) = f(&output_map, a, &self.0.output_map, &gen.outputs) {
+					v
+				} else {
+					*max_mem = (*max_mem).max(*a + 1);
+					gen.memory_size + *a
+				}
+			}
+			IrOp::Andi { .. }
+			| IrOp::Xori { .. }
+			| IrOp::Slli { .. }
+			| IrOp::Srli { .. }
+			| IrOp::Load { .. }
+			| IrOp::Read { .. }
+			| IrOp::OrB => return Some(op.clone()),
+		};
+		if ad == usize::MAX {
+			return None;
+		}
+		let mut op = op.clone();
+		match &mut op {
+			IrOp::CheckDirty { a, node } => (*a, *node) = (ad, gen.nodes + *node),
+			IrOp::Save { out: a }
+			| IrOp::And { a }
+			| IrOp::Or { a }
+			| IrOp::Xor { a }
+			| IrOp::Copy { a }
+			| IrOp::SaveB { out: a } => *a = ad,
+			_ => unreachable!(),
+		}
+		Some(op)
+	}
 }
 
 impl Serialize for Ic {
@@ -174,29 +228,16 @@ impl Component for Ic {
 			.collect()
 	}
 
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(ir::IrOp),
-		memory_size: usize,
-	) -> usize {
-		let (mut inp, mut outp) = (Vec::new(), Vec::new());
-		for (from, &to) in self.0.input_map.iter().enumerate() {
-			inp.resize(inp.len().max(to + 1), usize::MAX);
-			inp[to] = *inputs.get(from).unwrap_or(&usize::MAX);
+	fn generate_ir(&self, mut gen: GenerateIr) -> usize {
+		let mut ms = 0;
+		for n in self.0.program.nodes.iter() {
+			let ir =
+				n.ir.iter()
+					.filter_map(|op| self.translate_mem_op(op, &mut gen, &mut ms))
+					.collect();
+			(gen.out)(ir);
 		}
-		for (from, &to) in self.0.output_map.iter().enumerate() {
-			outp.resize(outp.len().max(to + 1), usize::MAX);
-			outp[to] = *outputs.get(from).unwrap_or(&usize::MAX);
-		}
-		out(ir::IrOp::RunIc {
-			ic: self.0.ir.clone().into(),
-			offset: memory_size,
-			inputs: inp.into(),
-			outputs: outp.into(),
-		});
-		self.0.memory_size
+		ms
 	}
 
 	fn properties(&self) -> Box<[Property]> {

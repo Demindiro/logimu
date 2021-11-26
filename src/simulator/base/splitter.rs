@@ -1,4 +1,6 @@
-use super::{Component, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty};
+use super::{
+	Component, GenerateIr, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty,
+};
 use core::num::{NonZeroU8, NonZeroUsize};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -29,34 +31,35 @@ impl Component for Splitter {
 			.collect()
 	}
 
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(IrOp),
-		_: usize,
-	) -> usize {
-		assert_eq!(inputs.len(), 1, "expected only one input");
+	fn generate_ir(&self, gen: GenerateIr) -> usize {
+		assert_eq!(gen.inputs.len(), 1, "expected only one input");
 		//assert_eq!(outputs.len(), self.outputs.len(), "outputs do not match");
-		let input = inputs[0];
+		let input = gen.inputs[0];
 		if input == usize::MAX {
 			return 0;
 		}
-		for (&w, &r) in outputs
+		let mut ir = Vec::new();
+		for (&w, &r) in gen
+			.outputs
 			.iter()
 			.zip(self.outputs.iter())
 			.filter(|(&w, _)| w != usize::MAX)
 		{
 			let r = r.get();
 			if r.count_ones() == r.trailing_ones() {
-				out(IrOp::Andi { a: input, i: usize::MAX, out: w });
+				// 000..111
+				ir.push(IrOp::Copy { a: input });
+				ir.push(IrOp::Save { out: w });
 			} else if r.count_ones() == (r >> r.trailing_zeros()).trailing_ones() {
 				let shift = r.trailing_zeros().try_into().unwrap();
-				out(IrOp::Srli { a: input, i: shift, out: w });
+				ir.push(IrOp::Copy { a: input });
+				ir.push(IrOp::Srli { i: shift });
+				ir.push(IrOp::Save { out: w });
 			} else {
 				todo!("handle spread output bits: {:032b}", r);
 			}
 		}
+		(gen.out)(ir);
 		0
 	}
 

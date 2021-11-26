@@ -240,41 +240,130 @@ where
 		}
 	}
 
-	pub fn generate_ir(&self) -> (Vec<ir::IrOp>, usize) {
-		let mut ir = Vec::new();
-		let mut nexus_visited = core::iter::repeat(false)
-			.take(
-				self.nexuses
-					.iter()
-					.map(|e| e.0.index() + 1)
-					.max()
-					.unwrap_or(0),
-			)
-			.collect();
-		let mut mem_size = 0;
+	/// Generate IR to simulate this graph.
+	///
+	/// # Process
+	///
+	/// - IR is generated for all components.
+	/// - Nexuses are iterated and IR is amended with checks.
+	/// - IR are put into nodes.
+	/// - Program is generated.
+	///
+	/// # Example: D flip-flop
+	///
+	/// ```
+	///                       ________   ___b___ _______
+	///     D ---+-----------o        \ /       o       \
+	///          |           | AND (1) o        | OR (1) o--d--o NOT (1) o--- Q
+	/// Clock ---------+-----o________/   nQ -> o_______/
+	///          |     |      ________           _______
+	///          |     +-----o        \    Q -> o       \
+	///          |           | AND (2) o        | OR (2) o--e--o NOT (2) o--- nQ
+	///          o NOT o--a--o________/ \___c___o_______/
+	/// ```
+	pub fn generate_ir(&self) -> Program {
+		// Map nexuses to memory
+		let nexus_to_mem = |h: NexusHandle| h.index();
 
-		for &o in self.outputs.iter() {
-			let out = &self.nodes[o];
-			assert_eq!(out.inputs.len(), 1);
-			for nexus in out.inputs.iter().filter_map(|n| *n) {
-				self.gen(&mut ir, nexus, &mut mem_size, &mut nexus_visited);
-				let inp = out
-					.inputs
-					.iter()
-					.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
-					.collect::<Box<_>>();
-				let outp = out
-					.outputs
-					.iter()
-					.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
-					.collect::<Box<_>>();
-				mem_size += out
-					.component
-					.generate_ir(&inp, &outp, &mut |op| ir.push(op), mem_size);
+		// Generate IR
+		let mut memory_size = self
+			.nexuses
+			.iter()
+			.map(|(h, _)| h.index())
+			.max()
+			.map_or(0, |m| m + 1);
+		let mut input_map = Vec::new();
+		let mut output_map = Vec::new();
+		let mut ir = Vec::new();
+		for (h, Node { inputs, outputs, component, .. }) in self.nodes.iter() {
+			let inp = inputs
+				.iter()
+				.map(|n| n.map(nexus_to_mem).unwrap_or(usize::MAX))
+				.collect::<Box<_>>();
+			let outp = outputs
+				.iter()
+				.map(|n| n.map(nexus_to_mem).unwrap_or(usize::MAX))
+				.collect::<Box<_>>();
+
+			// FIXME this is a quick hack to get things working. It is a very ugly
+			// solution.
+			if let Some(io) = component.external_type() {
+				let (m, i, mi, mm) = match io {
+					super::ExternalType::In(i, m) => (&mut input_map, i, outputs[0], m),
+					super::ExternalType::Out(i, m) => (&mut output_map, i, inputs[0], m),
+				};
+				m.resize(m.len().max(i + 1), (usize::MAX, usize::MAX));
+				if let Some(mi) = mi {
+					m[i] = (nexus_to_mem(mi), mm);
+				}
+			}
+			let nodes = ir.len();
+			let gen = GenerateIr {
+				inputs: &inp,
+				outputs: &outp,
+				out: &mut |ops| ir.push((h, ops)),
+				memory_size,
+				nodes,
+			};
+			memory_size += component.generate_ir(gen);
+		}
+
+		let ir_search = |ir: &Vec<_>, h: &GraphNodeHandle| {
+			if let Ok(i) = ir.binary_search_by_key(&h.0, |&(h, _)| h) {
+				let mut l @ mut r = i;
+				while ir.get(l.wrapping_sub(1)).map_or(false, |e| e.0 == h.0) {
+					l -= 1;
+				}
+				while ir.get(r).map_or(false, |e| e.0 == h.0) {
+					r += 1;
+				}
+				l..r
+			} else {
+				0..0
+			}
+		};
+
+		// Amend IR
+		let mut input_nodes_map = Vec::new();
+		for (h, Nexus { inputs, outputs, .. }) in self.nexuses.iter() {
+			let a = nexus_to_mem(NexusHandle(h));
+			for ih in inputs.iter() {
+				// Can be none for noop components such as In or Out
+				for i in ir_search(&ir, ih) {
+					for oh in outputs.iter() {
+						for o in ir_search(&ir, oh) {
+							ir[i].1.push(IrOp::CheckDirty { a, node: o });
+						}
+					}
+				}
+				if let Some(et) = self.nodes[ih.0].component.external_type() {
+					match et {
+						super::ExternalType::In(i, _) => {
+							input_nodes_map
+								.resize_with(input_nodes_map.len().max(i + 1), Box::default);
+							input_nodes_map[i] = outputs
+								.iter()
+								.flat_map(|h| ir_search(&ir, h))
+								.collect::<Box<[_]>>();
+						}
+						super::ExternalType::Out(..) => (),
+					}
+				}
 			}
 		}
 
-		(ir, mem_size)
+		// Create program
+		let nodes = ir
+			.into_iter()
+			.map(|(_, ir)| super::ir::Node { ir: ir.into() })
+			.collect();
+		Program {
+			memory_size,
+			input_map: input_map.into(),
+			output_map: output_map.into(),
+			input_nodes_map: input_nodes_map.into(),
+			nodes,
+		}
 	}
 
 	pub fn nodes(&self) -> GraphIter<C, Uc> {
@@ -283,40 +372,6 @@ where
 
 	pub fn nexus_mut(&mut self, nexus: NexusHandle) -> Option<&mut Nexus<Un>> {
 		self.nexuses.get_mut(nexus.0)
-	}
-
-	fn gen(
-		&self,
-		ir: &mut Vec<ir::IrOp>,
-		nexus: NexusHandle,
-		mem_size: &mut usize,
-		nexus_visited: &mut Box<[bool]>,
-	) {
-		if nexus_visited[nexus.0.index()] {
-			return;
-		}
-		nexus_visited[nexus.0.index()] = true;
-		*mem_size = (*mem_size).max(nexus.0.index() + 1);
-		let nexus = &self.nexuses[nexus.0];
-		for node in nexus.inputs.iter() {
-			let node = &self.nodes[node.0];
-			for nexus in node.inputs.iter().filter_map(|n| *n) {
-				self.gen(ir, nexus, mem_size, nexus_visited);
-			}
-			let inp = node
-				.inputs
-				.iter()
-				.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
-				.collect::<Box<_>>();
-			let outp = node
-				.outputs
-				.iter()
-				.map(|n| n.map(|n| n.0.index()).unwrap_or(usize::MAX))
-				.collect::<Box<_>>();
-			*mem_size += node
-				.component
-				.generate_ir(&inp, &outp, &mut |op| ir.push(op), *mem_size);
-		}
 	}
 }
 

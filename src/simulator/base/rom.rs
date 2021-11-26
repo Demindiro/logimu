@@ -1,13 +1,13 @@
 use super::*;
 use core::cell::Cell;
-use std::sync::Arc;
+use thin_dst::ThinArc;
 
 /// A component representing read-only memory.
 #[derive(Default, Serialize, Deserialize)]
 pub struct ReadOnlyMemory {
 	contents: Vec<usize>,
 	#[serde(skip)]
-	cached: Cell<Option<Arc<[usize]>>>,
+	cached: Cell<Option<ThinArc<(), usize>>>,
 }
 
 impl ReadOnlyMemory {
@@ -25,20 +25,14 @@ impl Component for ReadOnlyMemory {
 		[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
 	}
 
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		outputs: &[usize],
-		outf: &mut dyn FnMut(IrOp),
-		_memory_size: usize,
-	) -> usize {
-		let (address, out) = (inputs[0], outputs[0]);
+	fn generate_ir(&self, gen: GenerateIr) -> usize {
+		let (address, out) = (gen.inputs[0], gen.outputs[0]);
 		if address != usize::MAX && out != usize::MAX {
 			let mut cached = self.cached.take();
 			let memory = cached
-				.get_or_insert_with(|| self.contents.clone().into())
+				.get_or_insert_with(|| ThinArc::new((), self.contents.clone()))
 				.clone();
-			outf(IrOp::Read { memory, address, out });
+			(gen.out)([IrOp::Read { memory }].into());
 			self.cached.set(cached);
 		}
 		0

@@ -1,4 +1,6 @@
-use super::{Component, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty};
+use super::{
+	Component, GenerateIr, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty,
+};
 use core::num::NonZeroU8;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -24,15 +26,15 @@ impl Component for Constant {
 		[OutputType { bits: self.bits }].into()
 	}
 
-	fn generate_ir(
-		&self,
-		_: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(IrOp),
-		_: usize,
-	) -> usize {
-		if outputs[0] != usize::MAX {
-			out(IrOp::Load { value: self.value, out: outputs[0] });
+	fn generate_ir(&self, gen: GenerateIr) -> usize {
+		if gen.outputs[0] != usize::MAX {
+			(gen.out)(
+				[
+					IrOp::Load { value: self.value },
+					IrOp::Save { out: gen.outputs[0] },
+				]
+				.into(),
+			);
 		}
 		0
 	}

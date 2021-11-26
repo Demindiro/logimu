@@ -1,6 +1,8 @@
 use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 use crate::impl_dyn;
-use crate::simulator::{ir::IrOp, Component, InputType, OutputType, Property, SetProperty};
+use crate::simulator::{
+	ir::Value, Component, ExternalType, GenerateIr, InputType, OutputType, Property, SetProperty,
+};
 use core::any::Any;
 use core::ops::Mul;
 use eframe::egui::{Painter, Pos2, Vec2};
@@ -32,15 +34,16 @@ where
 {
 	fn name(&self) -> Box<str>;
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		position: Pos2,
-		direction: Direction,
-		inputs: &[usize],
-		outputs: &[usize],
-	);
+	fn draw(&self, draw: Draw);
+}
+
+pub struct Draw<'a> {
+	pub painter: &'a Painter,
+	pub alpha: f32,
+	pub position: Pos2,
+	pub direction: Direction,
+	pub inputs: &'a [Value],
+	pub outputs: &'a [Value],
 }
 
 impl_dyn! {
@@ -48,8 +51,9 @@ impl_dyn! {
 		ref label() -> Option<&str>;
 		ref inputs() -> Box<[InputType]>;
 		ref outputs() -> Box<[OutputType]>;
-		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+		ref generate_ir(gen: GenerateIr) -> usize;
 		ref properties() -> Box<[Property]>;
+		ref external_type() -> Option<ExternalType>;
 		mut set_property(name: &str, property: SetProperty) -> Result<(), Box<dyn Error>>;
 	}
 }

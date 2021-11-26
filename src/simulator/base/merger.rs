@@ -1,4 +1,6 @@
-use super::{Component, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty};
+use super::{
+	Component, GenerateIr, InputType, IrOp, OutputType, Property, PropertyValue, SetProperty,
+};
 use core::num::{NonZeroU8, NonZeroUsize};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -35,38 +37,36 @@ impl Component for Merger {
 		[OutputType { bits: self.bits }].into()
 	}
 
-	fn generate_ir(
-		&self,
-		inputs: &[usize],
-		outputs: &[usize],
-		out: &mut dyn FnMut(IrOp),
-		mem: usize,
-	) -> usize {
-		assert_eq!(outputs.len(), 1, "expected only one output");
-		let output = outputs[0];
-		let temp = mem;
-		// Clear destination
-		out(IrOp::Andi { a: output, i: 0, out: output });
-		for (&w, &r) in inputs.iter().zip(self.inputs.iter()) {
+	fn generate_ir(&self, gen: GenerateIr) -> usize {
+		assert_eq!(gen.outputs.len(), 1, "expected only one output");
+		let output = gen.outputs[0];
+		if output == usize::MAX {
+			return 0;
+		}
+		let mut ir = Vec::new();
+		for (&w, &r) in gen.inputs.iter().zip(self.inputs.iter()) {
+			if w == usize::MAX {
+				continue;
+			}
 			let r = r.get();
 			if r.count_ones() == r.trailing_ones() {
 				let mask = (1 << r.trailing_ones()) - 1;
-				out(IrOp::Andi { a: w, i: mask, out: temp });
-				out(IrOp::Or { a: output, b: temp, out: output });
+				ir.push(IrOp::Copy { a: w });
+				ir.push(IrOp::Andi { i: mask });
+				ir.push(IrOp::OrB);
 			} else if r.count_ones() == (r >> r.trailing_zeros()).trailing_ones() {
 				let mask = (1 << r.count_ones()) - 1;
-				out(IrOp::Andi { a: w, i: mask, out: temp });
-				out(IrOp::Slli {
-					a: temp,
-					i: r.trailing_zeros().try_into().unwrap(),
-					out: temp,
-				});
-				out(IrOp::Or { a: output, b: temp, out: output });
+				ir.push(IrOp::Copy { a: w });
+				ir.push(IrOp::Andi { i: mask });
+				ir.push(IrOp::Slli { i: r.trailing_zeros().try_into().unwrap() });
+				ir.push(IrOp::OrB);
 			} else {
 				todo!("handle spread output bits: {:032b}", r);
 			}
 		}
-		1
+		ir.push(IrOp::SaveB { out: output });
+		(gen.out)(ir);
+		0
 	}
 
 	fn properties(&self) -> Box<[Property]> {

@@ -22,10 +22,10 @@ use crate::circuit;
 use crate::circuit::{Aabb, CircuitComponent, Direction, Ic, PointOffset, WireHandle};
 use crate::simulator;
 
-use crate::simulator::{GraphNodeHandle, PropertyValue, SetProperty};
+use crate::simulator::{ir, GraphNodeHandle, PropertyValue, SetProperty};
 
 use core::any::TypeId;
-use core::fmt;
+use core::{fmt, mem};
 use eframe::{egui, epi};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -84,9 +84,9 @@ pub struct App {
 	selected_components: Vec<GraphNodeHandle>,
 	selected_wires: Vec<WireHandle>,
 
-	inputs: Vec<usize>,
-	outputs: Vec<usize>,
-	memory: Box<[usize]>,
+	inputs: Vec<ir::Value>,
+	outputs: Vec<ir::Value>,
+	program_state: simulator::State,
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
 
@@ -102,6 +102,8 @@ pub struct App {
 	drag_component: Option<(GraphNodeHandle, PointOffset, Direction)>,
 	copied_properties: CopiedProperties,
 	circuit_offset: egui::Vec2,
+
+	enable_simulation: bool,
 }
 
 impl App {
@@ -119,7 +121,7 @@ impl App {
 
 			inputs: Vec::new(),
 			outputs: Vec::new(),
-			memory: Box::default(),
+			program_state: Default::default(),
 			needs_update: false,
 
 			file_path: PathBuf::new().into(),
@@ -134,6 +136,8 @@ impl App {
 			drag_component: None,
 			copied_properties: Default::default(),
 			circuit_offset: Default::default(),
+
+			enable_simulation: true,
 		};
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
@@ -168,10 +172,14 @@ impl App {
 		self.outputs.clear();
 
 		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
-			c.external_input()
-				.map(|i| self.inputs.resize((i + 1).max(self.inputs.len()), 0));
-			c.external_output()
-				.map(|i| self.outputs.resize((i + 1).max(self.outputs.len()), 0));
+			c.external_input().map(|i| {
+				self.inputs
+					.resize((i + 1).max(self.inputs.len()), ir::Value::Set(0)) // FIXME use Floating
+			});
+			c.external_output().map(|i| {
+				self.outputs
+					.resize((i + 1).max(self.outputs.len()), ir::Value::Floating)
+			});
 		}
 
 		self.file_path = path;
@@ -199,13 +207,6 @@ impl epi::App for App {
 	/// Called each time the UI needs repainting, which may be many times per second.
 	/// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-		// TODO don't run circuit every frame
-		let (ir, mem_size) = self.circuit.generate_ir();
-		if mem_size != self.memory.len() {
-			self.memory = core::iter::repeat(0).take(mem_size).collect::<Box<_>>();
-		}
-		simulator::ir::interpreter::run(&ir, &mut self.memory, &self.inputs, &mut self.outputs);
-
 		use egui::*;
 
 		// Cancel any active actions.
@@ -230,11 +231,12 @@ impl epi::App for App {
 			for c in self.selected_components.drain(..) {
 				self.circuit.remove_component(c).unwrap();
 			}
-			self.circuit.remove_wires(&self.selected_wires);
+			let _ = self.circuit.remove_wires(&self.selected_wires);
 			self.selected_wires.clear();
 		}
 
 		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
+		let mut step_simulation = ctx.input().key_pressed(Key::I);
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
 			menu::bar(ui, |ui| {
@@ -259,7 +261,7 @@ impl epi::App for App {
 								let mut debug = String::default();
 								if ui.button(t.name()).clicked() || run_all {
 									let res = t.run(
-										&mut self.memory,
+										&mut self.program_state,
 										&mut self.inputs,
 										&mut self.outputs,
 										&mut debug,
@@ -287,8 +289,24 @@ impl epi::App for App {
 					}
 				});
 				self.log.open |= ui.button("Log").clicked();
+				menu::menu(ui, "Simulation", |ui| {
+					ui.checkbox(&mut self.enable_simulation, "Enabled");
+					step_simulation |= ui.button("Step").clicked();
+				});
 			});
 		});
+
+		// Run circuit
+		let program = std::sync::Arc::new(self.circuit.generate_ir());
+		self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
+		self.program_state.write_inputs(&self.inputs);
+		if self.enable_simulation {
+			self.program_state.run(1024);
+		} else if step_simulation {
+			self.log.debug("stepping simulation");
+			self.program_state.step();
+		}
+		self.program_state.read_outputs(&mut self.outputs);
 
 		if save {
 			match self.save_to_file(None) {
@@ -479,7 +497,15 @@ impl epi::App for App {
 					continue;
 				}
 
-				c.draw(&paint, 1.0, point2pos(p), d, &self.inputs, &self.outputs);
+				let draw = Draw {
+					painter: &paint,
+					alpha: 1.0,
+					position: point2pos(p),
+					direction: d,
+					inputs: &self.inputs,
+					outputs: &self.outputs,
+				};
+				c.draw(draw);
 				let aabb = c.aabb(d);
 				let delta = Vec2::new(8.0, 8.0);
 				let (min, max) = (p.saturating_add(aabb.min), p.saturating_add(aabb.max));
@@ -499,8 +525,12 @@ impl epi::App for App {
 					}
 					if e.clicked_by(PointerButton::Middle) {
 						// Toggle input if it is one
-						c.external_input()
-							.map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
+						if let Some(i) = c.external_input() {
+							self.inputs[i] = match self.inputs[i] {
+								ir::Value::Set(i) => ir::Value::Set(i.wrapping_add(1)),
+								ir::Value::Short | ir::Value::Floating => ir::Value::Set(0),
+							};
+						}
 					}
 				}
 				let mut hover_on_port = false;
@@ -557,8 +587,12 @@ impl epi::App for App {
 				let color = if intersects {
 					Color32::YELLOW
 				} else {
-					[Color32::DARK_GREEN, Color32::GREEN]
-						[*self.memory.get(h.index()).unwrap_or(&0) & 1]
+					pub use crate::simulator::ir::Value;
+					match self.program_state.read_nexus(h) {
+						Value::Set(v) => [Color32::DARK_GREEN, Color32::GREEN][v & 1],
+						Value::Floating => Color32::BLUE,
+						Value::Short => Color32::RED,
+					}
 				};
 				let stroke = Stroke::new(radius * 2.0, color);
 				let intersects = hover_pos.map_or(false, |p| w.intersect_point(pos2point(p)));
@@ -591,19 +625,21 @@ impl epi::App for App {
 				let pos = point2pos(point);
 
 				if let Some(c) = self.component.take() {
-					c.draw(
-						&paint,
-						move_alpha,
-						pos,
-						self.component_direction,
-						&self.inputs,
-						&self.outputs,
-					);
+					let draw = Draw {
+						painter: &paint,
+						alpha: move_alpha,
+						position: pos,
+						direction: self.component_direction,
+						inputs: &self.inputs,
+						outputs: &self.outputs,
+					};
+					c.draw(draw);
 
 					if e.clicked_by(PointerButton::Primary) {
-						(c.type_id() == TypeId::of::<simulator::In>()).then(|| self.inputs.push(0));
+						(c.type_id() == TypeId::of::<simulator::In>())
+							.then(|| self.inputs.push(ir::Value::Set(0))); // FIXME use Floating
 						(c.type_id() == TypeId::of::<simulator::Out>())
-							.then(|| self.outputs.push(0));
+							.then(|| self.outputs.push(ir::Value::Floating));
 						self.circuit
 							.add_component(c, point, self.component_direction);
 						self.needs_update = true;
@@ -626,14 +662,15 @@ impl epi::App for App {
 				} else if let Some((h, p, d)) = self.drag_component {
 					let p = point.saturating_add(p);
 					let (c, ..) = self.circuit.component(h).unwrap();
-					c.draw(
-						&paint,
-						move_alpha,
-						point2pos(p),
-						d,
-						&self.inputs,
-						&self.outputs,
-					);
+					let draw = Draw {
+						painter: &paint,
+						alpha: move_alpha,
+						position: point2pos(p),
+						direction: d,
+						inputs: &self.inputs,
+						outputs: &self.outputs,
+					};
+					c.draw(draw);
 					if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
 						self.drag_component = None;
 						self.circuit.move_component(h, p, d).unwrap();

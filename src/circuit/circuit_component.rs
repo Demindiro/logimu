@@ -1,6 +1,6 @@
 use super::{Direction, InputType, OutputType, PointOffset, RelativeAabb};
 use crate::impl_dyn;
-use crate::simulator::{ir::IrOp, Component, Property, SetProperty};
+use crate::simulator::{Component, ExternalType, GenerateIr, Property, SetProperty};
 use std::error::Error;
 
 /// A component with fixed input & output locations
@@ -45,8 +45,9 @@ impl_dyn! {
 		ref label() -> Option<&str>;
 		ref inputs() -> Box<[InputType]>;
 		ref outputs() -> Box<[OutputType]>;
-		ref generate_ir(inputs: &[usize], outputs: &[usize], out: &mut dyn FnMut(IrOp), ms: usize) -> usize;
+		ref generate_ir(gen: GenerateIr) -> usize;
 		ref properties() -> Box<[Property]>;
+		ref external_type() -> Option<ExternalType>;
 		mut set_property(name: &str, value: SetProperty) -> Result<(), Box<dyn Error>>;
 	}
 }

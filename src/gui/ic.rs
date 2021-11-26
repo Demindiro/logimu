@@ -1,7 +1,6 @@
 use super::*;
-use crate::circuit::Direction;
 
-use eframe::egui::{paint::RectShape, Painter, Pos2, Rect, Shape, Vec2};
+use eframe::egui::{paint::RectShape, Rect, Shape, Vec2};
 
 #[typetag::serde]
 impl ComponentPlacer for Ic {
@@ -9,15 +8,8 @@ impl ComponentPlacer for Ic {
 		self.path().to_string_lossy().into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		position: Pos2,
-		direction: Direction,
-		_inputs: &[usize],
-		_outputs: &[usize],
-	) {
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position, direction, .. } = draw;
 		let aabb = self.aabb(direction);
 		let min = position + Vec2::new(aabb.min.x.into(), aabb.min.y.into()) * 16.0;
 		let max = position + Vec2::new(aabb.max.x.into(), aabb.max.y.into()) * 16.0;
