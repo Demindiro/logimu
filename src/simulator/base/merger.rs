@@ -44,8 +44,6 @@ impl Component for Merger {
 			return 0;
 		}
 		let mut ir = Vec::new();
-		ir.push(IrOp::Load { value: 0 });
-		ir.push(IrOp::Save { out: output });
 		for (&w, &r) in gen.inputs.iter().zip(self.inputs.iter()) {
 			if w == usize::MAX {
 				continue;
@@ -55,19 +53,18 @@ impl Component for Merger {
 				let mask = (1 << r.trailing_ones()) - 1;
 				ir.push(IrOp::Copy { a: w });
 				ir.push(IrOp::Andi { i: mask });
-				ir.push(IrOp::Or { a: output });
-				ir.push(IrOp::Save { out: output });
+				ir.push(IrOp::OrB);
 			} else if r.count_ones() == (r >> r.trailing_zeros()).trailing_ones() {
 				let mask = (1 << r.count_ones()) - 1;
 				ir.push(IrOp::Copy { a: w });
 				ir.push(IrOp::Andi { i: mask });
 				ir.push(IrOp::Slli { i: r.trailing_zeros().try_into().unwrap() });
-				ir.push(IrOp::Or { a: output });
-				ir.push(IrOp::Save { out: output });
+				ir.push(IrOp::OrB);
 			} else {
 				todo!("handle spread output bits: {:032b}", r);
 			}
 		}
+		ir.push(IrOp::SaveB { out: output });
 		(gen.out)(ir);
 		0
 	}

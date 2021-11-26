@@ -146,12 +146,7 @@ impl Program {
 	pub fn new_state(self: Arc<Self>) -> State {
 		State {
 			program: self.clone(),
-			update_dirty: self
-				.input_nodes_map
-				.iter()
-				.flat_map(|v| &**v)
-				.copied()
-				.collect(),
+			update_dirty: (0..self.nodes.len()).collect(),
 			mark_dirty: Default::default(),
 			write: (0..self.memory_size).map(|_| 0).collect(),
 			read: (0..self.memory_size).map(|_| 0).collect(),
@@ -162,6 +157,7 @@ impl Program {
 /// Run a sequence of instructions.
 fn run(ops: &[IrOp], rd: &[usize], wr: &mut [usize], dirty: &mut IntegerSet) {
 	let mut acc = 0;
+	let mut b = 0;
 	for op in ops {
 		match op {
 			&IrOp::CheckDirty { a, node } => {
@@ -180,6 +176,8 @@ fn run(ops: &[IrOp], rd: &[usize], wr: &mut [usize], dirty: &mut IntegerSet) {
 			&IrOp::Copy { a } => acc = rd[a],
 			&IrOp::Load { value } => acc = value,
 			IrOp::Read { memory } => acc = *memory.slice.get(acc).unwrap_or(&0),
+			&IrOp::SaveB { out } => wr[out] = b,
+			&IrOp::OrB => b |= acc,
 		}
 	}
 }
@@ -198,12 +196,15 @@ pub enum IrOp {
 	Load { value: usize },
 	Copy { a: usize },
 	Read { memory: ThinArc<(), usize> },
+	SaveB { out: usize },
+	OrB,
 }
 
 impl IrOp {}
 
 impl fmt::Debug for IrOp {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		let fmt0 = |f: &mut fmt::Formatter, op| write!(f, "({})", op);
 		let fmt1 = |f: &mut fmt::Formatter, op, a| write!(f, "({:<5} {:>3})", op, a);
 		let fmt2 = |f: &mut fmt::Formatter, op, a, b| write!(f, "({:<5} {:>3} {:>3})", op, a, b);
 		match self {
@@ -218,7 +219,9 @@ impl fmt::Debug for IrOp {
 			IrOp::Srli { i } => fmt1(f, "srli", &(*i).into()),
 			IrOp::Copy { a } => fmt1(f, "copy", a),
 			IrOp::Load { value } => fmt1(f, "load", value),
-			IrOp::Read { .. } => write!(f, "(read [_])"),
+			IrOp::Read { .. } => fmt0(f, "(read [_])"),
+			IrOp::SaveB { out } => fmt1(f, "save-b", out),
+			IrOp::OrB => fmt0(f, "or-b"),
 		}
 	}
 }

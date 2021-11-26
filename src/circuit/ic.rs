@@ -149,11 +149,13 @@ impl Ic {
 			| IrOp::And { a }
 			| IrOp::Or { a }
 			| IrOp::Xor { a }
-			| IrOp::Copy { a } => {
+			| IrOp::Copy { a }
+			| IrOp::SaveB { out: a } => {
 				let f = |a: &[_], &k, b: &[_], c: &[_]| {
 					a.iter()
 						.position(|&(e, _)| e == k)
-						.map(|i| c[b[i]])
+						.and_then(|i| b.iter().position(|&e| e == i))
+						.map(|i| c[i])
 						.filter(|&v| v != usize::MAX)
 				};
 				let Program { input_map, output_map, .. } = &self.0.program;
@@ -171,7 +173,8 @@ impl Ic {
 			| IrOp::Slli { .. }
 			| IrOp::Srli { .. }
 			| IrOp::Load { .. }
-			| IrOp::Read { .. } => return Some(op.clone()),
+			| IrOp::Read { .. }
+			| IrOp::OrB => return Some(op.clone()),
 		};
 		if ad == usize::MAX {
 			return None;
@@ -183,7 +186,8 @@ impl Ic {
 			| IrOp::And { a }
 			| IrOp::Or { a }
 			| IrOp::Xor { a }
-			| IrOp::Copy { a } => *a = ad,
+			| IrOp::Copy { a }
+			| IrOp::SaveB { out: a } => *a = ad,
 			_ => unreachable!(),
 		}
 		Some(op)
