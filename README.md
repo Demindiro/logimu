@@ -29,4 +29,4 @@ running the binary in `target/` directly.
 
 ## Screenshot
 
-![GUI example](https://static.salt-inc.org/logimu/gui_1.png)
+![GUI example](https://static.salt-inc.org/logimu/gui_2.png)
