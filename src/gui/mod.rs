@@ -312,6 +312,7 @@ impl epi::App for App {
 				}
 			}
 		} else if step_simulation {
+			self.log.debug("stepping simulation");
 			self.program_state.step();
 		}
 		self.program_state.read_outputs(&mut self.outputs);

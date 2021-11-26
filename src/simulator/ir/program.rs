@@ -109,6 +109,7 @@ impl State {
 	pub fn adapt(self, program: impl Into<Arc<Program>> + AsRef<Program>) -> Self {
 		let program = program.into();
 		let mut s = program.new_state();
+		s.update_dirty |= self.update_dirty;
 		for (r, w) in self.read.iter().zip(s.read.iter_mut()) {
 			*w = *r;
 		}
@@ -119,7 +120,6 @@ impl State {
 	pub fn step(&mut self) -> usize {
 		debug_assert!(self.mark_dirty.is_empty());
 		for n in self.update_dirty.drain() {
-			//for n in 0..self.program.nodes.len() {
 			run(
 				&self.program.nodes[n].ir,
 				&self.read,
@@ -127,7 +127,6 @@ impl State {
 				&mut self.mark_dirty,
 			);
 		}
-		self.update_dirty.drain();
 		self.read.copy_from_slice(&self.write);
 		mem::swap(&mut self.write, &mut self.read);
 		mem::swap(&mut self.update_dirty, &mut self.mark_dirty);
@@ -147,7 +146,12 @@ impl Program {
 	pub fn new_state(self: Arc<Self>) -> State {
 		State {
 			program: self.clone(),
-			update_dirty: (0..self.nodes.len()).collect(),
+			update_dirty: self
+				.input_nodes_map
+				.iter()
+				.flat_map(|v| &**v)
+				.copied()
+				.collect(),
 			mark_dirty: Default::default(),
 			write: (0..self.memory_size).map(|_| 0).collect(),
 			read: (0..self.memory_size).map(|_| 0).collect(),

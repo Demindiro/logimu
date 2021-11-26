@@ -1,5 +1,6 @@
-use core::fmt;
 use core::iter::FromIterator;
+use core::ops::BitOrAssign;
+use core::{fmt, mem};
 
 /// A form of collection optimized for storing unique integers within a limited range and fast
 /// iteration of thise numbers.
@@ -46,6 +47,40 @@ impl IntegerSet {
 	pub fn len(&self) -> usize {
 		self.values.len()
 	}
+
+	#[allow(dead_code)]
+	pub fn contains(&self, num: usize) -> bool {
+		let (i, m) = (num / 8, 1 << num % 8);
+		self.bitmap.get(i).map_or(false, |&e| e & m > 0)
+	}
+
+	/// Merge a set into this set.
+	pub fn union(&mut self, with: Self) {
+		// Update values
+		let (mut values, oh, bm) = if self.values.len() >= with.values.len() {
+			(mem::take(&mut self.values), with.values, &self.bitmap)
+		} else {
+			(with.values, mem::take(&mut self.values), &with.bitmap)
+		};
+		for v in oh {
+			let (i, m) = (v / 8, 1 << v % 8);
+			if bm.get(i).map_or(true, |&e| e & m == 0) {
+				values.push(v);
+			}
+		}
+
+		// Update bitmap
+		let (mut bitmap, oh) = if self.bitmap.len() >= with.bitmap.len() {
+			(mem::take(&mut self.bitmap), with.bitmap)
+		} else {
+			(with.bitmap, mem::take(&mut self.bitmap))
+		};
+		for (w, r) in bitmap.iter_mut().zip(oh.iter()) {
+			*w |= *r;
+		}
+
+		*self = Self { values, bitmap };
+	}
 }
 
 impl FromIterator<usize> for IntegerSet {
@@ -66,5 +101,11 @@ impl fmt::Debug for IntegerSet {
 		let mut f = f.debug_set();
 		f.entries(&self.values);
 		f.finish()
+	}
+}
+
+impl BitOrAssign<Self> for IntegerSet {
+	fn bitor_assign(&mut self, rhs: Self) {
+		self.union(rhs)
 	}
 }

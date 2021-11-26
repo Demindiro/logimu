@@ -135,6 +135,59 @@ impl Ic {
 	pub fn path(&self) -> &Path {
 		&self.0.path
 	}
+
+	/// Translate a memory address of an IC to another address for use in a larger circuit.
+	fn translate_mem_op(
+		&self,
+		op: &IrOp,
+		gen: &mut GenerateIr,
+		max_mem: &mut usize,
+	) -> Option<IrOp> {
+		let ad = match op {
+			IrOp::CheckDirty { a, .. }
+			| IrOp::Save { out: a }
+			| IrOp::And { a }
+			| IrOp::Or { a }
+			| IrOp::Xor { a }
+			| IrOp::Copy { a } => {
+				let f = |a: &[_], &k, b: &[_], c: &[_]| {
+					a.iter()
+						.position(|&(e, _)| e == k)
+						.map(|i| c[b[i]])
+						.filter(|&v| v != usize::MAX)
+				};
+				let Program { input_map, output_map, .. } = &self.0.program;
+				if let Some(v) = f(input_map, a, &self.0.input_map, &gen.inputs) {
+					v
+				} else if let Some(v) = f(&output_map, a, &self.0.output_map, &gen.outputs) {
+					v
+				} else {
+					*max_mem = (*max_mem).max(*a + 1);
+					gen.memory_size + *a
+				}
+			}
+			IrOp::Andi { .. }
+			| IrOp::Xori { .. }
+			| IrOp::Slli { .. }
+			| IrOp::Srli { .. }
+			| IrOp::Load { .. }
+			| IrOp::Read { .. } => return Some(op.clone()),
+		};
+		if ad == usize::MAX {
+			return None;
+		}
+		let mut op = op.clone();
+		match &mut op {
+			IrOp::CheckDirty { a, node } => (*a, *node) = (ad, gen.nodes + *node),
+			IrOp::Save { out: a }
+			| IrOp::And { a }
+			| IrOp::Or { a }
+			| IrOp::Xor { a }
+			| IrOp::Copy { a } => *a = ad,
+			_ => unreachable!(),
+		}
+		Some(op)
+	}
 }
 
 impl Serialize for Ic {
@@ -173,20 +226,11 @@ impl Component for Ic {
 	}
 
 	fn generate_ir(&self, mut gen: GenerateIr) -> usize {
-		let (mut inp, mut outp) = (Vec::new(), Vec::new());
-		for (from, &to) in self.0.input_map.iter().enumerate() {
-			inp.resize(inp.len().max(to + 1), usize::MAX);
-			inp[to] = *gen.inputs.get(from).unwrap_or(&usize::MAX);
-		}
-		for (from, &to) in self.0.output_map.iter().enumerate() {
-			outp.resize(outp.len().max(to + 1), usize::MAX);
-			outp[to] = *gen.outputs.get(from).unwrap_or(&usize::MAX);
-		}
 		let mut ms = 0;
 		for n in self.0.program.nodes.iter() {
 			let ir =
 				n.ir.iter()
-					.filter_map(|op| translate_mem_op(&self.0.program, op, &mut gen, &mut ms))
+					.filter_map(|op| self.translate_mem_op(op, &mut gen, &mut ms))
 					.collect();
 			(gen.out)(ir);
 		}
@@ -200,53 +244,6 @@ impl Component for Ic {
 	fn set_property(&mut self, _name: &str, _value: SetProperty) -> Result<(), Box<dyn Error>> {
 		Err("no properties".into())
 	}
-}
-
-/// Translate a memory address of an IC to another address for use in a larger circuit.
-fn translate_mem_op(
-	program: &Program,
-	op: &IrOp,
-	gen: &mut GenerateIr,
-	max_mem: &mut usize,
-) -> Option<IrOp> {
-	let ad = match op {
-		IrOp::CheckDirty { a, .. }
-		| IrOp::Save { out: a }
-		| IrOp::And { a }
-		| IrOp::Or { a }
-		| IrOp::Xor { a }
-		| IrOp::Copy { a } => {
-			let f = |a: &[_], &k| a.iter().position(|&(e, _)| e == k);
-			if let Some(i) = f(&program.input_map, a) {
-				gen.inputs[i]
-			} else if let Some(i) = f(&program.output_map, a) {
-				gen.outputs[i]
-			} else {
-				*max_mem = (*max_mem).max(*a + 1);
-				gen.memory_size + *a
-			}
-		}
-		IrOp::Andi { .. }
-		| IrOp::Xori { .. }
-		| IrOp::Slli { .. }
-		| IrOp::Srli { .. }
-		| IrOp::Load { .. }
-		| IrOp::Read { .. } => return Some(op.clone()),
-	};
-	if ad == usize::MAX {
-		return None;
-	}
-	let mut op = op.clone();
-	match &mut op {
-		IrOp::CheckDirty { a, node } => (*a, *node) = (ad, gen.nodes + *node),
-		IrOp::Save { out: a }
-		| IrOp::And { a }
-		| IrOp::Or { a }
-		| IrOp::Xor { a }
-		| IrOp::Copy { a } => *a = ad,
-		_ => unreachable!(),
-	}
-	Some(op)
 }
 
 #[typetag::serde]

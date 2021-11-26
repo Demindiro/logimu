@@ -274,44 +274,39 @@ where
 			.map_or(0, |m| m + 1);
 		let mut input_map = Vec::new();
 		let mut output_map = Vec::new();
-		let mut ir = self
-			.nodes
-			.iter()
-			.flat_map(|(h, Node { inputs, outputs, component, .. })| {
-				let inp = inputs
-					.iter()
-					.map(|n| n.map(nexus_to_mem).unwrap_or(usize::MAX))
-					.collect::<Box<_>>();
-				let outp = outputs
-					.iter()
-					.map(|n| n.map(nexus_to_mem).unwrap_or(usize::MAX))
-					.collect::<Box<_>>();
-				let mut v = Vec::new();
+		let mut ir = Vec::new();
+		for (h, Node { inputs, outputs, component, .. }) in self.nodes.iter() {
+			let inp = inputs
+				.iter()
+				.map(|n| n.map(nexus_to_mem).unwrap_or(usize::MAX))
+				.collect::<Box<_>>();
+			let outp = outputs
+				.iter()
+				.map(|n| n.map(nexus_to_mem).unwrap_or(usize::MAX))
+				.collect::<Box<_>>();
 
-				// FIXME this is a quick hack to get things working. It is a very ugly
-				// solution.
-				if let Some(io) = component.external_type() {
-					let (m, i, mi, mm) = match io {
-						super::ExternalType::In(i, m) => (&mut input_map, i, outputs[0], m),
-						super::ExternalType::Out(i, m) => (&mut output_map, i, inputs[0], m),
-					};
-					m.resize(m.len().max(i + 1), (usize::MAX, usize::MAX));
-					if let Some(mi) = mi {
-						m[i] = (nexus_to_mem(mi), mm);
-					}
-				}
-				let nodes = v.len();
-				let gen = GenerateIr {
-					inputs: &inp,
-					outputs: &outp,
-					out: &mut |ir| v.push((h, ir)),
-					memory_size,
-					nodes,
+			// FIXME this is a quick hack to get things working. It is a very ugly
+			// solution.
+			if let Some(io) = component.external_type() {
+				let (m, i, mi, mm) = match io {
+					super::ExternalType::In(i, m) => (&mut input_map, i, outputs[0], m),
+					super::ExternalType::Out(i, m) => (&mut output_map, i, inputs[0], m),
 				};
-				memory_size += component.generate_ir(gen);
-				v
-			})
-			.collect::<Vec<_>>();
+				m.resize(m.len().max(i + 1), (usize::MAX, usize::MAX));
+				if let Some(mi) = mi {
+					m[i] = (nexus_to_mem(mi), mm);
+				}
+			}
+			let nodes = ir.len();
+			let gen = GenerateIr {
+				inputs: &inp,
+				outputs: &outp,
+				out: &mut |ops| ir.push((h, ops)),
+				memory_size,
+				nodes,
+			};
+			memory_size += component.generate_ir(gen);
+		}
 
 		let ir_search = |ir: &Vec<_>, h: &GraphNodeHandle| {
 			if let Ok(i) = ir.binary_search_by_key(&h.0, |&(h, _)| h) {
