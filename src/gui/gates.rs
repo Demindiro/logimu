@@ -1,4 +1,4 @@
-use super::ComponentPlacer;
+use super::{ComponentPlacer, Draw};
 use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 
 use crate::simulator::{ir::Value, *};
@@ -55,15 +55,8 @@ impl ComponentPlacer for AndGate {
 		"and".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		_: &[usize],
-		_: &[Value],
-	) {
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
 		let stroke = stroke(alpha);
 		let radius = 16.0;
 
@@ -88,15 +81,8 @@ impl ComponentPlacer for OrGate {
 		"or".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		_: &[usize],
-		_: &[Value],
-	) {
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
 		let stroke = stroke(alpha);
 
 		let mut v = Vec::new();
@@ -157,15 +143,8 @@ impl ComponentPlacer for XorGate {
 		"xor".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		_: &[usize],
-		_: &[Value],
-	) {
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
 		let stroke = stroke(alpha);
 
 		let mut v = Vec::new();
@@ -261,15 +240,8 @@ impl ComponentPlacer for NotGate {
 		"not".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		_: &[usize],
-		_: &[Value],
-	) {
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
 		let stroke = stroke(alpha);
 
 		let mut v = Vec::new();
@@ -323,28 +295,9 @@ impl ComponentPlacer for In {
 		"in".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		inputs: &[usize],
-		_: &[Value],
-	) {
-		draw_in_out(
-			painter,
-			alpha,
-			pos,
-			dir,
-			inputs
-				.get(self.index)
-				.copied()
-				.map(Value::Set)
-				.unwrap_or(Value::Floating),
-			self.bits.get(),
-			0.0,
-		)
+	fn draw(&self, draw: Draw) {
+		let i = *draw.inputs.get(self.index).unwrap_or(&Value::Floating);
+		draw_in_out(draw, i, self.bits.get(), 0.0);
 	}
 }
 
@@ -382,24 +335,9 @@ impl ComponentPlacer for Out {
 		"out".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		_: &[usize],
-		outputs: &[Value],
-	) {
-		draw_in_out(
-			painter,
-			alpha,
-			pos,
-			dir,
-			*outputs.get(self.index).unwrap_or(&Value::Floating),
-			self.bits.get(),
-			8.0,
-		)
+	fn draw(&self, draw: Draw) {
+		let o = *draw.outputs.get(self.index).unwrap_or(&Value::Floating);
+		draw_in_out(draw, o, self.bits.get(), 8.0)
 	}
 }
 
@@ -418,15 +356,8 @@ fn aabb_in_out(bits: NonZeroU8, dir: Direction) -> RelativeAabb {
 	RelativeAabb::new(PointOffset::new(ax, ay), PointOffset::new(bx, by))
 }
 
-fn draw_in_out(
-	painter: &Painter,
-	alpha: f32,
-	pos: Pos2,
-	dir: Direction,
-	value: Value,
-	bits: u8,
-	corner_radius: f32,
-) {
+fn draw_in_out(draw: Draw, value: Value, bits: u8, corner_radius: f32) {
+	let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
 	let stroke = stroke(alpha);
 	if bits == 1 {
 		let rect = Rect::from_center_size(pos, Vec2::new(16.0, 16.0))
@@ -516,25 +447,9 @@ impl ComponentPlacer for Splitter {
 		"splitter".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		inputs: &[usize],
-		outputs: &[Value],
-	) {
-		draw_merger_splitter(
-			painter,
-			alpha,
-			pos,
-			dir,
-			inputs,
-			outputs,
-			&*self.input_points(),
-			&*self.output_points(),
-		)
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, inputs, .. } = draw;
+		draw_merger_splitter(draw, &*self.input_points(), &*self.output_points())
 	}
 }
 
@@ -570,25 +485,8 @@ impl ComponentPlacer for Merger {
 		"merger".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		inputs: &[usize],
-		outputs: &[Value],
-	) {
-		draw_merger_splitter(
-			painter,
-			alpha,
-			pos,
-			dir,
-			inputs,
-			outputs,
-			&*self.input_points(),
-			&*self.output_points(),
-		)
+	fn draw(&self, draw: Draw) {
+		draw_merger_splitter(draw, &*self.input_points(), &*self.output_points())
 	}
 }
 
@@ -603,16 +501,8 @@ fn aabb_merger_splitter(
 	dir * aabb
 }
 
-fn draw_merger_splitter(
-	painter: &Painter,
-	alpha: f32,
-	pos: Pos2,
-	dir: Direction,
-	_inputs: &[usize],
-	_outputs: &[Value],
-	in_pos: &[PointOffset],
-	out_pos: &[PointOffset],
-) {
+fn draw_merger_splitter(draw: Draw, in_pos: &[PointOffset], out_pos: &[PointOffset]) {
+	let Draw { painter, alpha, position: pos, direction: dir, inputs, .. } = draw;
 	let stroke = Stroke::new(3.0, color_alpha(Color32::WHITE, alpha));
 
 	let aabb = aabb_merger_splitter(in_pos, out_pos, Direction::Right);
@@ -666,15 +556,8 @@ impl ComponentPlacer for Constant {
 		"constant".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		_: Direction,
-		_: &[usize],
-		_: &[Value],
-	) {
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, inputs, .. } = draw;
 		let pad = (self.bits.get() + 3) / 4;
 		painter.text(
 			pos,
@@ -717,15 +600,8 @@ impl ComponentPlacer for ReadOnlyMemory {
 		"rom".into()
 	}
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		pos: Pos2,
-		dir: Direction,
-		inputs: &[usize],
-		_: &[Value],
-	) {
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, inputs, .. } = draw;
 		let RelativeAabb { min, max } = self.aabb(dir);
 		let min = Vec2::new(f32::from(min.x) * 16.0, f32::from(min.y) * 16.0);
 		let max = Vec2::new(f32::from(max.x) * 16.0, f32::from(max.y) * 16.0);
@@ -740,6 +616,13 @@ impl ComponentPlacer for ReadOnlyMemory {
 		for d in -2..=2i8 {
 			let v = inputs
 				.get(0)
+				.and_then(|i| {
+					if let ir::Value::Set(i) = i {
+						Some(i)
+					} else {
+						None
+					}
+				})
 				.and_then(|i| {
 					if d > 0 {
 						i.checked_add(d as usize)

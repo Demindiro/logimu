@@ -35,15 +35,16 @@ where
 {
 	fn name(&self) -> Box<str>;
 
-	fn draw(
-		&self,
-		painter: &Painter,
-		alpha: f32,
-		position: Pos2,
-		direction: Direction,
-		inputs: &[usize],
-		outputs: &[Value],
-	);
+	fn draw(&self, draw: Draw);
+}
+
+pub struct Draw<'a> {
+	pub painter: &'a Painter,
+	pub alpha: f32,
+	pub position: Pos2,
+	pub direction: Direction,
+	pub inputs: &'a [Value],
+	pub outputs: &'a [Value],
 }
 
 impl_dyn! {

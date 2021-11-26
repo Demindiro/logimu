@@ -53,7 +53,7 @@ where
 	pub fn run(
 		&self,
 		state: &mut simulator::State,
-		inputs: &mut [usize],
+		inputs: &mut [ir::Value],
 		outputs: &mut [ir::Value],
 		log: impl core::fmt::Write,
 	) -> Result<(), TestError> {
@@ -76,7 +76,7 @@ where
 							if let Some(i) = c.external_input() {
 								if c.label() == Some(&label) {
 									let inp = inputs.take();
-									inp[i] = value as usize;
+									inp[i] = ir::Value::Set(value as usize);
 									inputs.set(inp);
 									return Ok(Value::None);
 								}
@@ -102,9 +102,11 @@ where
 						Err(format!("output '{}' not found", label).into())
 					}
 					"run" => {
-						let (mem, inp, outp) = (state.borrow_mut(), inputs.take(), outputs.take());
-						todo!();
-						//interpreter::run(&self.ir, mem, inp, outp);
+						let (inp, outp) = (inputs.take(), outputs.take());
+						let mut s = state.borrow_mut();
+						s.write_inputs(inp);
+						s.run(1024);
+						s.read_outputs(outp);
 						(inputs.set(inp), outputs.set(outp));
 						Ok(Value::None)
 					}

@@ -12,7 +12,7 @@ impl InputsOutputs {
 		ctx: &egui::CtxRef,
 		inputs: &[(impl fmt::Display, usize)],
 		outputs: &[(impl fmt::Display, usize)],
-		input_values: &mut [usize],
+		input_values: &mut [Value],
 		output_values: &[Value],
 	) {
 		if inputs.is_empty() && outputs.is_empty() {
@@ -28,7 +28,12 @@ impl InputsOutputs {
 							ui.vertical(|ui| {
 								for (l, i) in inputs.iter() {
 									ui.horizontal(|ui| {
-										ui.add(egui::DragValue::new(&mut input_values[*i]));
+										let mut v = match input_values[*i] {
+											Value::Set(v) => v,
+											_ => todo!(),
+										};
+										ui.add(egui::DragValue::new(&mut v));
+										input_values[*i] = Value::Set(v);
 										ui.label(l);
 									});
 								}

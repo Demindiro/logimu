@@ -117,6 +117,7 @@ impl State {
 		s
 	}
 
+	/// Step the circuit once.
 	pub fn step(&mut self) -> usize {
 		debug_assert!(self.mark_dirty.is_empty());
 		for n in self.update_dirty.drain() {
@@ -130,6 +131,16 @@ impl State {
 		self.read.copy_from_slice(&self.write);
 		mem::swap(&mut self.write, &mut self.read);
 		mem::swap(&mut self.update_dirty, &mut self.mark_dirty);
+		self.update_dirty.len()
+	}
+
+	/// Step the circuit up to n times or until no more nodes need an update.
+	pub fn run(&mut self, max_iterations: usize) -> usize {
+		for _ in 0..1024 {
+			if self.step() == 0 {
+				break;
+			}
+		}
 		self.update_dirty.len()
 	}
 }

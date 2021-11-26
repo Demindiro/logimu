@@ -84,7 +84,7 @@ pub struct App {
 	selected_components: Vec<GraphNodeHandle>,
 	selected_wires: Vec<WireHandle>,
 
-	inputs: Vec<usize>,
+	inputs: Vec<ir::Value>,
 	outputs: Vec<ir::Value>,
 	program_state: simulator::State,
 	// TODO we shouldn't delay updates by a frame.
@@ -172,8 +172,10 @@ impl App {
 		self.outputs.clear();
 
 		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
-			c.external_input()
-				.map(|i| self.inputs.resize((i + 1).max(self.inputs.len()), 0));
+			c.external_input().map(|i| {
+				self.inputs
+					.resize((i + 1).max(self.inputs.len()), ir::Value::Set(0)) // FIXME use Floating
+			});
 			c.external_output().map(|i| {
 				self.outputs
 					.resize((i + 1).max(self.outputs.len()), ir::Value::Floating)
@@ -229,7 +231,7 @@ impl epi::App for App {
 			for c in self.selected_components.drain(..) {
 				self.circuit.remove_component(c).unwrap();
 			}
-			self.circuit.remove_wires(&self.selected_wires);
+			let _ = self.circuit.remove_wires(&self.selected_wires);
 			self.selected_wires.clear();
 		}
 
@@ -297,20 +299,9 @@ impl epi::App for App {
 		// Run circuit
 		let program = std::sync::Arc::new(self.circuit.generate_ir());
 		self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
-		self.program_state.write_inputs(
-			&self
-				.inputs
-				.iter()
-				.copied()
-				.map(crate::simulator::ir::Value::Set)
-				.collect::<Vec<_>>(),
-		);
+		self.program_state.write_inputs(&self.inputs);
 		if self.enable_simulation {
-			for _ in 0..1024 {
-				if self.program_state.step() == 0 {
-					break;
-				}
-			}
+			self.program_state.run(1024);
 		} else if step_simulation {
 			self.log.debug("stepping simulation");
 			self.program_state.step();
@@ -506,7 +497,15 @@ impl epi::App for App {
 					continue;
 				}
 
-				c.draw(&paint, 1.0, point2pos(p), d, &self.inputs, &self.outputs);
+				let draw = Draw {
+					painter: &paint,
+					alpha: 1.0,
+					position: point2pos(p),
+					direction: d,
+					inputs: &self.inputs,
+					outputs: &self.outputs,
+				};
+				c.draw(draw);
 				let aabb = c.aabb(d);
 				let delta = Vec2::new(8.0, 8.0);
 				let (min, max) = (p.saturating_add(aabb.min), p.saturating_add(aabb.max));
@@ -526,8 +525,12 @@ impl epi::App for App {
 					}
 					if e.clicked_by(PointerButton::Middle) {
 						// Toggle input if it is one
-						c.external_input()
-							.map(|i| self.inputs[i] = self.inputs[i].wrapping_add(1));
+						if let Some(i) = c.external_input() {
+							self.inputs[i] = match self.inputs[i] {
+								ir::Value::Set(i) => ir::Value::Set(i.wrapping_add(1)),
+								ir::Value::Short | ir::Value::Floating => ir::Value::Set(0),
+							};
+						}
 					}
 				}
 				let mut hover_on_port = false;
@@ -622,17 +625,19 @@ impl epi::App for App {
 				let pos = point2pos(point);
 
 				if let Some(c) = self.component.take() {
-					c.draw(
-						&paint,
-						move_alpha,
-						pos,
-						self.component_direction,
-						&self.inputs,
-						&self.outputs,
-					);
+					let draw = Draw {
+						painter: &paint,
+						alpha: move_alpha,
+						position: pos,
+						direction: self.component_direction,
+						inputs: &self.inputs,
+						outputs: &self.outputs,
+					};
+					c.draw(draw);
 
 					if e.clicked_by(PointerButton::Primary) {
-						(c.type_id() == TypeId::of::<simulator::In>()).then(|| self.inputs.push(0));
+						(c.type_id() == TypeId::of::<simulator::In>())
+							.then(|| self.inputs.push(ir::Value::Set(0))); // FIXME use Floating
 						(c.type_id() == TypeId::of::<simulator::Out>())
 							.then(|| self.outputs.push(ir::Value::Floating));
 						self.circuit
@@ -657,14 +662,15 @@ impl epi::App for App {
 				} else if let Some((h, p, d)) = self.drag_component {
 					let p = point.saturating_add(p);
 					let (c, ..) = self.circuit.component(h).unwrap();
-					c.draw(
-						&paint,
-						move_alpha,
-						point2pos(p),
-						d,
-						&self.inputs,
-						&self.outputs,
-					);
+					let draw = Draw {
+						painter: &paint,
+						alpha: move_alpha,
+						position: point2pos(p),
+						direction: d,
+						inputs: &self.inputs,
+						outputs: &self.outputs,
+					};
+					c.draw(draw);
 					if e.drag_released() && !e.dragged_by(PointerButton::Primary) {
 						self.drag_component = None;
 						self.circuit.move_component(h, p, d).unwrap();
