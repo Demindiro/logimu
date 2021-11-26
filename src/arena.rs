@@ -86,6 +86,7 @@ impl<T> Arena<T> {
 		Iter { iter: self.list.iter().enumerate() }
 	}
 
+	#[allow(dead_code)]
 	pub fn iter_mut(&mut self) -> IterMut<T> {
 		IterMut { iter: self.list.iter_mut().enumerate() }
 	}

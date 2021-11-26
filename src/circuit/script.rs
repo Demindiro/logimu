@@ -5,14 +5,12 @@ use core::cell::{Cell, RefCell};
 use core::fmt;
 use std::collections::HashMap;
 use std::error::Error;
-use std::rc::Rc;
 
 impl<C> Circuit<C>
 where
 	C: CircuitComponent,
 {
 	pub fn tests(&mut self) -> Result<Vec<Test<C>>, ParseError> {
-		let program = Rc::new(self.generate_ir());
 		let mut src = self.script_source.trim_start();
 		let mut tests = Vec::new();
 		while let Some((script, s)) = SExpr::parse(src)? {
@@ -22,7 +20,7 @@ where
 					.get(1)
 					.and_then(Arg::to_value)
 					.and_then(Value::into_string)
-					.map(|_| tests.push(Test { program: program.clone(), circuit: self, script }));
+					.map(|_| tests.push(Test { circuit: self, script }));
 			}
 			src = s.trim_start();
 		}
@@ -34,7 +32,6 @@ pub struct Test<'a, C>
 where
 	C: CircuitComponent,
 {
-	program: Rc<Program>,
 	circuit: &'a Circuit<C>,
 	script: SExpr,
 }

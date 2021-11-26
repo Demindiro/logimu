@@ -19,8 +19,8 @@ pub use script::*;
 pub use wire::*;
 
 use super::simulator::{
-	ir::IrOp, Component, Graph, GraphIter, GraphNodeHandle, InputType, NexusHandle, OutputType,
-	Port, Program, Property, RemoveError, SetProperty,
+	Component, Graph, GraphIter, GraphNodeHandle, InputType, NexusHandle, OutputType, Port,
+	Program, Property, RemoveError, SetProperty,
 };
 use crate::arena::{Arena, Handle};
 use core::{fmt, mem};

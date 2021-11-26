@@ -1,8 +1,7 @@
 use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 use crate::impl_dyn;
 use crate::simulator::{
-	ir::Value, Component, ExternalType, GenerateIr, InputType, IrOp, OutputType, Property,
-	SetProperty,
+	ir::Value, Component, ExternalType, GenerateIr, InputType, OutputType, Property, SetProperty,
 };
 use core::any::Any;
 use core::ops::Mul;

@@ -30,6 +30,7 @@ impl IntegerSet {
 	}
 
 	/// Iterate over all numbers in this set.
+	#[allow(dead_code)]
 	pub fn iter(&self) -> core::slice::Iter<usize> {
 		self.values.iter()
 	}

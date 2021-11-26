@@ -1,6 +1,6 @@
 use super::{Direction, InputType, OutputType, PointOffset, RelativeAabb};
 use crate::impl_dyn;
-use crate::simulator::{ir::IrOp, Component, ExternalType, GenerateIr, Property, SetProperty};
+use crate::simulator::{Component, ExternalType, GenerateIr, Property, SetProperty};
 use std::error::Error;
 
 /// A component with fixed input & output locations

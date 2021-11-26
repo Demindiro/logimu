@@ -13,7 +13,6 @@ pub struct Wire {
 impl Wire {
 	/// Create a new wire.
 	pub fn new(a: Point, b: Point) -> Self {
-		let (min, max) = (a.min(b), a.max(b));
 		Self { min: a.min(b), max: a.max(b) }
 	}
 

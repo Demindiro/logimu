@@ -1,6 +1,5 @@
 use super::*;
 use core::cell::Cell;
-use std::sync::Arc;
 use thin_dst::ThinArc;
 
 /// A component representing read-only memory.

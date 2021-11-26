@@ -4,7 +4,7 @@ use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
 use crate::simulator::{ir::Value, *};
 use core::num::NonZeroU8;
 use eframe::egui::paint::{CircleShape, Mesh, RectShape, Rgba};
-use eframe::egui::{Align2, Color32, Painter, Pos2, Rect, Shape, Stroke, TextStyle, Vec2};
+use eframe::egui::{Align2, Color32, Pos2, Rect, Shape, Stroke, TextStyle, Vec2};
 
 const IN_NOT: &[PointOffset] = &[PointOffset::new(-1, 0)];
 const OUT: &[PointOffset] = &[PointOffset::new(1, 0)];
@@ -448,7 +448,6 @@ impl ComponentPlacer for Splitter {
 	}
 
 	fn draw(&self, draw: Draw) {
-		let Draw { painter, alpha, position: pos, direction: dir, inputs, .. } = draw;
 		draw_merger_splitter(draw, &*self.input_points(), &*self.output_points())
 	}
 }
@@ -502,7 +501,7 @@ fn aabb_merger_splitter(
 }
 
 fn draw_merger_splitter(draw: Draw, in_pos: &[PointOffset], out_pos: &[PointOffset]) {
-	let Draw { painter, alpha, position: pos, direction: dir, inputs, .. } = draw;
+	let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
 	let stroke = Stroke::new(3.0, color_alpha(Color32::WHITE, alpha));
 
 	let aabb = aabb_merger_splitter(in_pos, out_pos, Direction::Right);
@@ -557,7 +556,7 @@ impl ComponentPlacer for Constant {
 	}
 
 	fn draw(&self, draw: Draw) {
-		let Draw { painter, alpha, position: pos, direction: dir, inputs, .. } = draw;
+		let Draw { painter, alpha, position: pos, .. } = draw;
 		let pad = (self.bits.get() + 3) / 4;
 		painter.text(
 			pos,

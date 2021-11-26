@@ -108,6 +108,9 @@ impl State {
 	/// as possible.
 	pub fn adapt(self, program: impl Into<Arc<Program>> + AsRef<Program>) -> Self {
 		let program = program.into();
+		if Arc::as_ptr(&program) == Arc::as_ptr(&self.program) {
+			return self;
+		}
 		let mut s = program.new_state();
 		s.update_dirty |= self.update_dirty;
 		for (r, w) in self.read.iter().zip(s.read.iter_mut()) {
@@ -136,7 +139,7 @@ impl State {
 
 	/// Step the circuit up to n times or until no more nodes need an update.
 	pub fn run(&mut self, max_iterations: usize) -> usize {
-		for _ in 0..1024 {
+		for _ in 0..max_iterations {
 			if self.step() == 0 {
 				break;
 			}

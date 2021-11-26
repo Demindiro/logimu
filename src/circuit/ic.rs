@@ -9,7 +9,6 @@ use std::fmt;
 use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use thin_dst::ThinArc;
 
 lazy_static::lazy_static! {
 	/// A collection of ICs that have been loaded, mapped to paths.
