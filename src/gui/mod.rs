@@ -334,7 +334,9 @@ impl epi::App for App {
 		let (mut ei, mut eo) = (Vec::new(), Vec::new());
 		for (c, ..) in self.circuit.components(circuit::Aabb::ALL) {
 			if let Some(i) = c.external_input() {
-				ei.push((c.label().unwrap_or_default(), i));
+				let bits = c.outputs()[0].bits.get();
+				let range = 0..=((1 << bits) - 1);
+				ei.push((c.label().unwrap_or_default(), range, i));
 			}
 			if let Some(o) = c.external_output() {
 				eo.push((c.label().unwrap_or_default(), o));
