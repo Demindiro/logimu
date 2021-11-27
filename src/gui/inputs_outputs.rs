@@ -1,5 +1,6 @@
 use crate::simulator::ir::Value;
 use core::fmt;
+use core::ops::RangeInclusive;
 use eframe::egui;
 
 /// List of circuit inputs & outputs, each with a numeric input to change it.
@@ -10,7 +11,7 @@ impl InputsOutputs {
 	pub fn show(
 		&mut self,
 		ctx: &egui::CtxRef,
-		inputs: &[(impl fmt::Display, usize)],
+		inputs: &[(impl fmt::Display, RangeInclusive<i64>, usize)],
 		outputs: &[(impl fmt::Display, usize)],
 		input_values: &mut [Value],
 		output_values: &[Value],
@@ -26,13 +27,13 @@ impl InputsOutputs {
 					ui.horizontal(|ui| {
 						if !inputs.is_empty() {
 							ui.vertical(|ui| {
-								for (l, i) in inputs.iter() {
+								for (l, r, i) in inputs.iter() {
 									ui.horizontal(|ui| {
 										let mut v = match input_values[*i] {
 											Value::Set(v) => v,
 											_ => todo!(),
 										};
-										ui.add(egui::DragValue::new(&mut v));
+										ui.add(egui::DragValue::new(&mut v).clamp_range(r.clone()));
 										input_values[*i] = Value::Set(v);
 										ui.label(l);
 									});

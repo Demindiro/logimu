@@ -204,7 +204,7 @@ impl Component for In {
 	}
 
 	fn outputs(&self) -> Box<[OutputType]> {
-		[OutputType { bits: NonZeroU8::new(32).unwrap() }].into()
+		[OutputType { bits: self.bits }].into()
 	}
 
 	fn generate_ir(&self, _: GenerateIr) -> usize {
@@ -258,7 +258,7 @@ impl Component for Out {
 	}
 
 	fn inputs(&self) -> Box<[InputType]> {
-		[InputType { bits: NonZeroU8::new(32).unwrap() }].into()
+		[InputType { bits: self.bits }].into()
 	}
 
 	fn outputs(&self) -> Box<[OutputType]> {
