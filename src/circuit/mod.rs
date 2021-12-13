@@ -22,15 +22,15 @@ use super::simulator::{
 	Component, Graph, GraphIter, GraphNodeHandle, InputType, NexusHandle, OutputType, Port,
 	Program, Property, RemoveError, SetProperty,
 };
-use crate::arena::{Arena, Handle};
 use core::{fmt, mem};
+use generational_arena::{Arena, Index};
 use serde::de;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct WireHandle(Handle);
+pub struct WireHandle(Index);
 
 /// A collection of interconnected wires and components.
 pub struct Circuit<C>
@@ -485,7 +485,7 @@ where
 	C: CircuitComponent,
 {
 	aabb: Aabb,
-	iter: crate::arena::Iter<'a, (Wire, NexusHandle)>,
+	iter: generational_arena::Iter<'a, (Wire, NexusHandle)>,
 	_marker: std::marker::PhantomData<C>,
 }
 
@@ -511,7 +511,7 @@ where
 	C: CircuitComponent,
 {
 	point: Point,
-	iter: crate::arena::Iter<'a, (Wire, NexusHandle)>,
+	iter: generational_arena::Iter<'a, (Wire, NexusHandle)>,
 	_marker: std::marker::PhantomData<C>,
 }
 
