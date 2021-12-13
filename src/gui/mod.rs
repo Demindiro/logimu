@@ -536,7 +536,10 @@ impl epi::App for App {
 						// Toggle input if it is one
 						if let Some(i) = c.external_input() {
 							self.inputs[i] = match self.inputs[i] {
-								ir::Value::Set(i) => ir::Value::Set(i.wrapping_add(1)),
+								ir::Value::Set(i) => {
+									let m = 1 << c.outputs()[0].bits.get();
+									ir::Value::Set(i.wrapping_add(1).rem_euclid(m))
+								}
 								ir::Value::Short | ir::Value::Floating => ir::Value::Set(0),
 							};
 						}
