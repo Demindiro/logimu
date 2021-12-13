@@ -23,6 +23,7 @@ use crate::simulator::{ir, GraphNodeHandle, PropertyValue, SetProperty};
 use core::any::TypeId;
 use core::{fmt, mem};
 use eframe::{egui, epi};
+use rfd::FileDialog;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
@@ -180,8 +181,7 @@ impl App {
 		Ok(())
 	}
 
-	pub fn save_to_file(&mut self, path: Option<&Path>) -> Result<(), SaveCircuitError> {
-		let path = path.unwrap_or(&self.file_path);
+	pub fn save_to_file(&mut self, path: &Path) -> Result<(), SaveCircuitError> {
 		let f = fs::File::create(&path).map_err(SaveCircuitError::Io)?;
 		ron::ser::to_writer(f, &self.circuit).map_err(SaveCircuitError::Serde)?;
 		Ok(())
@@ -190,6 +190,12 @@ impl App {
 	pub fn load_ic(&mut self, path: Box<Path>) -> Result<(), circuit::LoadError> {
 		self.ic_components.insert(path.clone(), Ic::get_ic(path)?);
 		Ok(())
+	}
+
+	fn file_dialog(&self) -> FileDialog {
+		FileDialog::new()
+			.add_filter("logimu", &["logimu"])
+			.set_file_name(self.file_path.to_str().unwrap())
 	}
 }
 
@@ -229,7 +235,8 @@ impl epi::App for App {
 			self.selected_wires.clear();
 		}
 
-		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
+		let mut save = (ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl)
+			.then(|| self.file_path.clone());
 		let mut step_simulation = ctx.input().key_pressed(Key::I);
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -237,15 +244,18 @@ impl epi::App for App {
 				menu::menu(ui, "File", |ui| {
 					if ui.button("New").clicked() {}
 					if ui.button("Open").clicked() {
-						use rfd::FileDialog;
 						let file = FileDialog::new().pick_file();
 						dbg!(file);
 					}
 					if ui.button("Close").clicked() {
 						frame.quit()
 					}
-					save |= ui.button("Save").clicked();
-					if ui.button("Save as").clicked() {}
+					if ui.button("Save").clicked() {
+						save = Some(self.file_path.clone());
+					}
+					if ui.button("Save as").clicked() {
+						save = self.file_dialog().save_file().map(Into::into);
+					}
 				});
 				self.script_editor.open |= ui.button("Script").clicked();
 				menu::menu(ui, "Test", |ui| {
@@ -304,8 +314,8 @@ impl epi::App for App {
 		}
 		self.program_state.read_outputs(&mut self.outputs);
 
-		if save {
-			match self.save_to_file(None) {
+		if let Some(save) = save {
+			match self.save_to_file(&save) {
 				Ok(_) => self
 					.log
 					.debug(format!("Saved circuit to {:?}", &self.file_path)),
