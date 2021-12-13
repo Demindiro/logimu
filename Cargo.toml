@@ -12,6 +12,7 @@ ron = "*"
 lazy_static = "*"
 gcd = "*"
 thin-dst = "*"
+rfd = "*"
 
 [dev-dependencies]
 serde_test = "*"

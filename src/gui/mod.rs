@@ -1,8 +1,6 @@
 mod component;
 mod components_info;
 mod copy;
-mod dialog;
-mod file;
 mod gates;
 mod ic;
 mod inputs_outputs;
@@ -12,8 +10,6 @@ mod script;
 use component::*;
 use components_info::*;
 use copy::*;
-use dialog::Dialog;
-use file::OpenDialog;
 use inputs_outputs::*;
 use log::*;
 use script::*;
@@ -27,6 +23,7 @@ use crate::simulator::{ir, GraphNodeHandle, PropertyValue, SetProperty};
 use core::any::TypeId;
 use core::{fmt, mem};
 use eframe::{egui, epi};
+use rfd::FileDialog;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
@@ -74,7 +71,6 @@ impl fmt::Display for LoadCircuitError {
 }
 
 pub struct App {
-	dialog: Option<Box<dyn Dialog>>,
 	component: Option<Box<dyn ComponentPlacer>>,
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
@@ -109,7 +105,6 @@ pub struct App {
 impl App {
 	pub fn new() -> Self {
 		let mut s = Self {
-			dialog: None,
 			component: None,
 			component_direction: circuit::Direction::Up,
 			wire_start: None,
@@ -142,11 +137,9 @@ impl App {
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
 		match s.load_from_file(f.clone().into()) {
-			Ok(()) => s.log.debug(format!("Loaded {:?}", f.clone())),
-			Err(e) => {
-				s.log.error(format!("Failed to load {:?}: {}", f, e));
-				std::env::set_current_dir(f.parent().unwrap()).unwrap();
-			}
+			Ok(()) => (),
+			// Switch to directory regardless
+			Err(_) => std::env::set_current_dir(f.parent().unwrap()).unwrap(),
 		}
 
 		for f in std::fs::read_dir(".").unwrap() {
@@ -165,9 +158,16 @@ impl App {
 	}
 
 	pub fn load_from_file(&mut self, path: Box<Path>) -> Result<(), LoadCircuitError> {
-		let f = fs::File::open(&path).map_err(LoadCircuitError::Io)?;
+		let f = fs::File::open(&path).map_err(|e| {
+			self.log.error(format!("Failed to open {:?}: {}", path, e));
+			LoadCircuitError::Io(e)
+		})?;
 		std::env::set_current_dir(path.parent().unwrap()).unwrap();
-		self.circuit = ron::de::from_reader(f).map_err(LoadCircuitError::Serde)?;
+		self.circuit = ron::de::from_reader(f).map_err(|e| {
+			self.log
+				.error(format!("Failed to deserialize {:?}: {}", path, e));
+			LoadCircuitError::Serde(e)
+		})?;
 		self.inputs.clear();
 		self.outputs.clear();
 
@@ -182,12 +182,12 @@ impl App {
 			});
 		}
 
+		self.log.debug(format!("Loaded {:?}", &path));
 		self.file_path = path;
 		Ok(())
 	}
 
-	pub fn save_to_file(&mut self, path: Option<&Path>) -> Result<(), SaveCircuitError> {
-		let path = path.unwrap_or(&self.file_path);
+	pub fn save_to_file(&mut self, path: &Path) -> Result<(), SaveCircuitError> {
 		let f = fs::File::create(&path).map_err(SaveCircuitError::Io)?;
 		ron::ser::to_writer(f, &self.circuit).map_err(SaveCircuitError::Serde)?;
 		Ok(())
@@ -196,6 +196,12 @@ impl App {
 	pub fn load_ic(&mut self, path: Box<Path>) -> Result<(), circuit::LoadError> {
 		self.ic_components.insert(path.clone(), Ic::get_ic(path)?);
 		Ok(())
+	}
+
+	fn file_dialog(&self) -> FileDialog {
+		FileDialog::new()
+			.add_filter("logimu", &["logimu"])
+			.set_file_name(self.file_path.to_str().unwrap())
 	}
 }
 
@@ -235,7 +241,8 @@ impl epi::App for App {
 			self.selected_wires.clear();
 		}
 
-		let mut save = ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl;
+		let mut save = (ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl)
+			.then(|| self.file_path.clone());
 		let mut step_simulation = ctx.input().key_pressed(Key::I);
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -243,13 +250,20 @@ impl epi::App for App {
 				menu::menu(ui, "File", |ui| {
 					if ui.button("New").clicked() {}
 					if ui.button("Open").clicked() {
-						self.dialog = Some(Box::new(OpenDialog {}));
+						if let Some(file) = FileDialog::new().pick_file() {
+							// The status is already logged in the call.
+							let _ = self.load_from_file(file.into());
+						}
 					}
 					if ui.button("Close").clicked() {
 						frame.quit()
 					}
-					save |= ui.button("Save").clicked();
-					if ui.button("Save as").clicked() {}
+					if ui.button("Save").clicked() {
+						save = Some(self.file_path.clone());
+					}
+					if ui.button("Save as").clicked() {
+						save = self.file_dialog().save_file().map(Into::into);
+					}
 				});
 				self.script_editor.open |= ui.button("Script").clicked();
 				menu::menu(ui, "Test", |ui| {
@@ -308,8 +322,8 @@ impl epi::App for App {
 		}
 		self.program_state.read_outputs(&mut self.outputs);
 
-		if save {
-			match self.save_to_file(None) {
+		if let Some(save) = save {
+			match self.save_to_file(&save) {
 				Ok(_) => self
 					.log
 					.debug(format!("Saved circuit to {:?}", &self.file_path)),
@@ -318,13 +332,6 @@ impl epi::App for App {
 					&self.file_path, e
 				)),
 			}
-		}
-
-		if let Some(dialog) = self.dialog.as_mut() {
-			let r = Window::new(dialog.name())
-				.anchor(Align2([Align::Center; 2]), Vec2::ZERO)
-				.show(ctx, |ui| dialog.show(ui));
-			r.map(|r| r.inner.map(|r| r.then(|| self.dialog = None)));
 		}
 
 		self.script_editor.show(ctx, &mut self.circuit);
