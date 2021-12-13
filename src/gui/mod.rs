@@ -137,11 +137,9 @@ impl App {
 		let f = std::env::args().skip(1).next();
 		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
 		match s.load_from_file(f.clone().into()) {
-			Ok(()) => s.log.debug(format!("Loaded {:?}", f.clone())),
-			Err(e) => {
-				s.log.error(format!("Failed to load {:?}: {}", f, e));
-				std::env::set_current_dir(f.parent().unwrap()).unwrap();
-			}
+			Ok(()) => (),
+			// Switch to directory regardless
+			Err(_) => std::env::set_current_dir(f.parent().unwrap()).unwrap(),
 		}
 
 		for f in std::fs::read_dir(".").unwrap() {
@@ -160,9 +158,16 @@ impl App {
 	}
 
 	pub fn load_from_file(&mut self, path: Box<Path>) -> Result<(), LoadCircuitError> {
-		let f = fs::File::open(&path).map_err(LoadCircuitError::Io)?;
+		let f = fs::File::open(&path).map_err(|e| {
+			self.log.error(format!("Failed to open {:?}: {}", path, e));
+			LoadCircuitError::Io(e)
+		})?;
 		std::env::set_current_dir(path.parent().unwrap()).unwrap();
-		self.circuit = ron::de::from_reader(f).map_err(LoadCircuitError::Serde)?;
+		self.circuit = ron::de::from_reader(f).map_err(|e| {
+			self.log
+				.error(format!("Failed to deserialize {:?}: {}", path, e));
+			LoadCircuitError::Serde(e)
+		})?;
 		self.inputs.clear();
 		self.outputs.clear();
 
@@ -177,6 +182,7 @@ impl App {
 			});
 		}
 
+		self.log.debug(format!("Loaded {:?}", &path));
 		self.file_path = path;
 		Ok(())
 	}
@@ -244,8 +250,10 @@ impl epi::App for App {
 				menu::menu(ui, "File", |ui| {
 					if ui.button("New").clicked() {}
 					if ui.button("Open").clicked() {
-						let file = FileDialog::new().pick_file();
-						dbg!(file);
+						if let Some(file) = FileDialog::new().pick_file() {
+							// The status is already logged in the call.
+							let _ = self.load_from_file(file.into());
+						}
 					}
 					if ui.button("Close").clicked() {
 						frame.quit()
