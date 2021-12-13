@@ -1,8 +1,6 @@
 mod component;
 mod components_info;
 mod copy;
-mod dialog;
-mod file;
 mod gates;
 mod ic;
 mod inputs_outputs;
@@ -12,8 +10,6 @@ mod script;
 use component::*;
 use components_info::*;
 use copy::*;
-use dialog::Dialog;
-use file::OpenDialog;
 use inputs_outputs::*;
 use log::*;
 use script::*;
@@ -74,7 +70,6 @@ impl fmt::Display for LoadCircuitError {
 }
 
 pub struct App {
-	dialog: Option<Box<dyn Dialog>>,
 	component: Option<Box<dyn ComponentPlacer>>,
 	component_direction: circuit::Direction,
 	wire_start: Option<circuit::Point>,
@@ -109,7 +104,6 @@ pub struct App {
 impl App {
 	pub fn new() -> Self {
 		let mut s = Self {
-			dialog: None,
 			component: None,
 			component_direction: circuit::Direction::Up,
 			wire_start: None,
@@ -243,7 +237,9 @@ impl epi::App for App {
 				menu::menu(ui, "File", |ui| {
 					if ui.button("New").clicked() {}
 					if ui.button("Open").clicked() {
-						self.dialog = Some(Box::new(OpenDialog {}));
+						use rfd::FileDialog;
+						let file = FileDialog::new().pick_file();
+						dbg!(file);
 					}
 					if ui.button("Close").clicked() {
 						frame.quit()
@@ -318,13 +314,6 @@ impl epi::App for App {
 					&self.file_path, e
 				)),
 			}
-		}
-
-		if let Some(dialog) = self.dialog.as_mut() {
-			let r = Window::new(dialog.name())
-				.anchor(Align2([Align::Center; 2]), Vec2::ZERO)
-				.show(ctx, |ui| dialog.show(ui));
-			r.map(|r| r.inner.map(|r| r.then(|| self.dialog = None)));
 		}
 
 		self.script_editor.show(ctx, &mut self.circuit);
