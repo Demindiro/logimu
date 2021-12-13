@@ -5,7 +5,6 @@
 #![feature(new_uninit)]
 #![feature(map_try_insert)]
 
-mod arena;
 mod circuit;
 mod gui;
 mod integer_set;

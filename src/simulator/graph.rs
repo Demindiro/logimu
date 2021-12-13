@@ -1,7 +1,7 @@
 use super::*;
-use crate::arena::{Arena, Handle};
 use core::iter;
 use core::mem;
+use generational_arena::{Arena, Index};
 
 /// A graph of connected components
 pub struct Graph<C, Uc, Un>
@@ -12,24 +12,24 @@ where
 	nodes: Arena<Node<C, Uc>>,
 	/// All nexuses in this graph with a list of connected nodes.
 	nexuses: Arena<Nexus<Un>>,
-	outputs: Vec<Handle>,
-	inputs: Vec<Handle>,
+	outputs: Vec<Index>,
+	inputs: Vec<Index>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct GraphNodeHandle(Handle);
+pub struct GraphNodeHandle(Index);
 
 /// A nexus is a single point connecting multiple ports. It can have only one value at any time.
 ///
 /// It is equivalent to a collection of interconnected wires in a circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct NexusHandle(Handle);
+pub struct NexusHandle(Index);
 
 impl NexusHandle {
 	pub fn index(self) -> usize {
-		self.0.index()
+		self.0.into_raw_parts().0
 	}
 }
 
@@ -269,7 +269,7 @@ where
 		let mut memory_size = self
 			.nexuses
 			.iter()
-			.map(|(h, _)| h.index())
+			.map(|(h, _)| h.into_raw_parts().0)
 			.max()
 			.map_or(0, |m| m + 1);
 		let mut input_map = Vec::new();
@@ -402,7 +402,7 @@ pub struct GraphIter<'a, C, Uc>
 where
 	C: Component,
 {
-	iter: crate::arena::Iter<'a, Node<C, Uc>>,
+	iter: generational_arena::Iter<'a, Node<C, Uc>>,
 }
 
 impl<'a, C, Uc> Iterator for GraphIter<'a, C, Uc>
