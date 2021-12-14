@@ -86,7 +86,7 @@ pub struct App {
 	// TODO we shouldn't delay updates by a frame.
 	needs_update: bool,
 
-	file_path: Box<Path>,
+	file_path: Option<Box<Path>>,
 
 	script_editor: ScriptEditor,
 	log: Log,
@@ -119,7 +119,7 @@ impl App {
 			program_state: Default::default(),
 			needs_update: false,
 
-			file_path: PathBuf::new().into(),
+			file_path: None,
 
 			script_editor: Default::default(),
 			log: Default::default(),
@@ -134,26 +134,26 @@ impl App {
 
 			enable_simulation: true,
 		};
-		let f = std::env::args().skip(1).next();
-		let f = PathBuf::from(f.as_deref().unwrap_or("/tmp/ok.logimu"));
-		match s.load_from_file(f.clone().into()) {
-			Ok(()) => (),
-			// Switch to directory regardless
-			Err(_) => std::env::set_current_dir(f.parent().unwrap()).unwrap(),
-		}
+		if let Some(f) = std::env::args().skip(1).next() {
+			let f = PathBuf::from(f);
+			match s.load_from_file(f.clone().into()) {
+				Ok(()) => (),
+				// Switch to directory regardless
+				Err(_) => s.switch_to_file_dir(&f),
+			}
 
-		for f in std::fs::read_dir(".").unwrap() {
-			let f = f.unwrap().path();
-			if f.extension().and_then(|p| p.to_str()) == Some("logimu") {
-				match s.load_ic(f.clone().into()) {
-					Ok(()) => s.log.debug(format!("Loaded {:?}", f)),
-					Err(e) => s.log.error(format!("Failed to load {:?}: {:?}", f, e)),
+			for f in std::fs::read_dir(".").unwrap() {
+				let f = f.unwrap().path();
+				if f.extension().and_then(|p| p.to_str()) == Some("logimu") {
+					match s.load_ic(f.clone().into()) {
+						Ok(()) => s.log.debug(format!("Loaded {:?}", f)),
+						Err(e) => s.log.error(format!("Failed to load {:?}: {:?}", f, e)),
+					}
 				}
 			}
+
+			s.file_path = Some(PathBuf::from(f.components().last().unwrap().as_os_str()).into());
 		}
-
-		s.file_path = PathBuf::from(f.components().last().unwrap().as_os_str()).into();
-
 		s
 	}
 
@@ -162,7 +162,7 @@ impl App {
 			self.log.error(format!("Failed to open {:?}: {}", path, e));
 			LoadCircuitError::Io(e)
 		})?;
-		std::env::set_current_dir(path.parent().unwrap()).unwrap();
+		self.switch_to_file_dir(&path);
 		self.circuit = ron::de::from_reader(f).map_err(|e| {
 			self.log
 				.error(format!("Failed to deserialize {:?}: {}", path, e));
@@ -183,7 +183,7 @@ impl App {
 		}
 
 		self.log.debug(format!("Loaded {:?}", &path));
-		self.file_path = path;
+		self.file_path = Some(path);
 		Ok(())
 	}
 
@@ -199,9 +199,49 @@ impl App {
 	}
 
 	fn file_dialog(&self) -> FileDialog {
-		FileDialog::new()
-			.add_filter("logimu", &["logimu"])
-			.set_file_name(self.file_path.to_str().unwrap())
+		let fd = FileDialog::new().add_filter("logimu", &["logimu"]);
+		if let Some(p) = self.file_path.as_ref() {
+			fd.set_file_name(p.to_str().unwrap())
+		} else {
+			fd
+		}
+	}
+
+	/// Save the circuit. May be cancelled by the user.
+	fn save(&mut self, ask_path: bool) {
+		if ask_path || self.file_path.is_none() {
+			if let Some(path) = self.file_dialog().save_file().map(Into::into) {
+				self.file_path = Some(path);
+			} else {
+				return; // Cancelled by user.
+			}
+		}
+		let path = self.file_path.as_ref().unwrap().clone();
+		match self.save_to_file(&path) {
+			Ok(_) => self.log.debug(format!("Saved circuit to {:?}", path)),
+			Err(e) => self
+				.log
+				.error(format!("Failed to save circuit to {:?}: {:?}", path, e)),
+		}
+	}
+
+	/// Create a new empty circuit.
+	fn clear_circuit(&mut self) {
+		self.file_path = None;
+		self.circuit = Default::default();
+		self.selected_components = Default::default();
+		self.selected_wires = Default::default();
+		self.inputs = Default::default();
+		self.outputs = Default::default();
+		self.program_state = Default::default();
+	}
+
+	/// Set working directory to the parent directory of a file. Ignores `""`.
+	fn switch_to_file_dir(&self, path: &Path) {
+		let parent = path.parent().unwrap();
+		if parent != Path::new("") {
+			std::env::set_current_dir(path.parent().unwrap()).unwrap();
+		}
 	}
 }
 
@@ -241,14 +281,17 @@ impl epi::App for App {
 			self.selected_wires.clear();
 		}
 
-		let mut save = (ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl)
-			.then(|| self.file_path.clone());
+		if ctx.input().key_pressed(Key::S) && ctx.input().modifiers.ctrl {
+			self.save(false);
+		}
 		let mut step_simulation = ctx.input().key_pressed(Key::I);
 
 		TopBottomPanel::top("top_panel").show(ctx, |ui| {
 			menu::bar(ui, |ui| {
 				menu::menu(ui, "File", |ui| {
-					if ui.button("New").clicked() {}
+					if ui.button("New").clicked() {
+						self.clear_circuit();
+					}
 					if ui.button("Open").clicked() {
 						if let Some(file) = FileDialog::new().pick_file() {
 							// The status is already logged in the call.
@@ -259,10 +302,10 @@ impl epi::App for App {
 						frame.quit()
 					}
 					if ui.button("Save").clicked() {
-						save = Some(self.file_path.clone());
+						self.save(false);
 					}
 					if ui.button("Save as").clicked() {
-						save = self.file_dialog().save_file().map(Into::into);
+						self.save(true);
 					}
 				});
 				self.script_editor.open |= ui.button("Script").clicked();
@@ -321,18 +364,6 @@ impl epi::App for App {
 			self.program_state.step();
 		}
 		self.program_state.read_outputs(&mut self.outputs);
-
-		if let Some(save) = save {
-			match self.save_to_file(&save) {
-				Ok(_) => self
-					.log
-					.debug(format!("Saved circuit to {:?}", &self.file_path)),
-				Err(e) => self.log.error(format!(
-					"Failed to save circuit to {:?}: {:?}",
-					&self.file_path, e
-				)),
-			}
-		}
 
 		self.script_editor.show(ctx, &mut self.circuit);
 		self.log.show(ctx);
