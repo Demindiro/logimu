@@ -32,7 +32,9 @@ impl Log {
 
 	pub fn push(&mut self, tag: Tag, entry: impl Into<Box<str>>) {
 		(self.entries.len() >= Self::MAX_ENTRIES).then(|| self.entries.pop_front());
-		self.entries.push_back((tag, entry.into()));
+		let entry = entry.into();
+		println!("{}{}", tag.prefix(), &entry);
+		self.entries.push_back((tag, entry));
 	}
 
 	pub fn debug(&mut self, message: impl Into<Box<str>>) {
@@ -53,11 +55,7 @@ impl Log {
 impl fmt::Display for Log {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		for (t, m) in self.entries.iter() {
-			f.write_str(match t {
-				Tag::Success => "[success] ",
-				Tag::Error => "[error]   ",
-				Tag::Debug => "[debug]   ",
-			})?;
+			f.write_str(t.prefix())?;
 			f.write_str(m)?;
 			f.write_str("\n")?;
 		}
@@ -77,6 +75,14 @@ impl Tag {
 			Self::Success => Color32::LIGHT_GREEN,
 			Self::Error => Color32::RED,
 			Self::Debug => Color32::GRAY,
+		}
+	}
+
+	fn prefix(&self) -> &str {
+		match self {
+			Self::Success => "[success] ",
+			Self::Error => "[error]   ",
+			Self::Debug => "[debug]   ",
 		}
 	}
 }
