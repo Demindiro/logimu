@@ -186,6 +186,7 @@ impl App {
 
 		self.log.debug(format!("Loaded {:?}", &path));
 		self.file_path = Some(path);
+		self.needs_update = true;
 		Ok(())
 	}
 
@@ -357,8 +358,11 @@ impl epi::App for App {
 		});
 
 		// Run circuit
-		let program = std::sync::Arc::new(self.circuit.generate_ir());
-		self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
+		if self.needs_update {
+			let program = std::sync::Arc::new(self.circuit.generate_ir());
+			self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
+			self.needs_update = false;
+		}
 		self.program_state.write_inputs(&self.inputs);
 		if self.enable_simulation {
 			self.program_state.run(1024);
@@ -737,9 +741,8 @@ impl epi::App for App {
 			// Mark any components that will be updated in the next step
 			if self.debug_simulation {
 				let list = self.program_state.dirty_components().collect::<Vec<_>>();
-				for (c, p, _, h) in self.circuit.components(aabb) {
+				for (_, p, _, h) in self.circuit.components(aabb) {
 					if list.contains(&h) {
-						dbg!(c.name());
 						paint.circle_filled(point2pos(p), 4.0, Color32::RED);
 					}
 				}
