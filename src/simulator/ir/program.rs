@@ -1,4 +1,4 @@
-use super::super::NexusHandle;
+use super::super::{GraphNodeHandle, NexusHandle};
 use crate::integer_set::IntegerSet;
 use core::{fmt, mem};
 use std::sync::Arc;
@@ -22,6 +22,8 @@ pub struct Program {
 	pub(crate) output_map: Box<[(usize, usize)]>,
 	/// Input to node map.
 	pub(crate) input_nodes_map: Box<[Box<[usize]>]>,
+	/// Node to graph handle map
+	pub(crate) node_to_graph_map: Box<[GraphNodeHandle]>,
 }
 
 #[derive(Debug, Default)]
@@ -145,6 +147,13 @@ impl State {
 			}
 		}
 		self.update_dirty.len()
+	}
+
+	/// Return a list of all dirty components
+	pub fn dirty_components<'a>(&'a self) -> impl Iterator<Item = GraphNodeHandle> + 'a {
+		self.update_dirty
+			.iter()
+			.map(|i| self.program.node_to_graph_map[*i])
 	}
 }
 
