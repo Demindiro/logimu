@@ -275,6 +275,7 @@ where
 		let mut input_map = Vec::new();
 		let mut output_map = Vec::new();
 		let mut ir = Vec::new();
+		let mut node_to_graph_map = Vec::new();
 		for (h, Node { inputs, outputs, component, .. }) in self.nodes.iter() {
 			let inp = inputs
 				.iter()
@@ -301,7 +302,10 @@ where
 			let gen = GenerateIr {
 				inputs: &inp,
 				outputs: &outp,
-				out: &mut |ops| ir.push((h, ops)),
+				out: &mut |ops| {
+					node_to_graph_map.push(GraphNodeHandle(h));
+					ir.push((h, ops));
+				},
 				memory_size,
 				nodes,
 			};
@@ -363,6 +367,7 @@ where
 			output_map: output_map.into(),
 			input_nodes_map: input_nodes_map.into(),
 			nodes,
+			node_to_graph_map: node_to_graph_map.into(),
 		}
 	}
 

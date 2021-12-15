@@ -100,6 +100,7 @@ pub struct App {
 	circuit_offset: egui::Vec2,
 
 	enable_simulation: bool,
+	debug_simulation: bool,
 }
 
 impl App {
@@ -133,6 +134,7 @@ impl App {
 			circuit_offset: Default::default(),
 
 			enable_simulation: true,
+			debug_simulation: false,
 		};
 		if let Some(f) = std::env::args().skip(1).next() {
 			let f = PathBuf::from(f);
@@ -184,6 +186,7 @@ impl App {
 
 		self.log.debug(format!("Loaded {:?}", &path));
 		self.file_path = Some(path);
+		self.needs_update = true;
 		Ok(())
 	}
 
@@ -349,13 +352,17 @@ impl epi::App for App {
 				menu::menu(ui, "Simulation", |ui| {
 					ui.checkbox(&mut self.enable_simulation, "Enabled");
 					step_simulation |= ui.button("Step").clicked();
+					ui.checkbox(&mut self.debug_simulation, "Debug simulation");
 				});
 			});
 		});
 
 		// Run circuit
-		let program = std::sync::Arc::new(self.circuit.generate_ir());
-		self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
+		if self.needs_update {
+			let program = std::sync::Arc::new(self.circuit.generate_ir());
+			self.program_state = mem::take(&mut self.program_state).adapt(program.clone());
+			self.needs_update = false;
+		}
 		self.program_state.write_inputs(&self.inputs);
 		if self.enable_simulation {
 			self.program_state.run(1024);
@@ -727,6 +734,16 @@ impl epi::App for App {
 					if e.drag_started() && e.dragged_by(PointerButton::Primary) {
 						let (_, p, d) = self.circuit.component(c).unwrap();
 						self.drag_component = Some((c, (p - point).unwrap(), d));
+					}
+				}
+			}
+
+			// Mark any components that will be updated in the next step
+			if self.debug_simulation {
+				let list = self.program_state.dirty_components().collect::<Vec<_>>();
+				for (_, p, _, h) in self.circuit.components(aabb) {
+					if list.contains(&h) {
+						paint.circle_filled(point2pos(p), 4.0, Color32::RED);
 					}
 				}
 			}
