@@ -202,6 +202,11 @@ fn run(ops: &[IrOp], rd: &[usize], wr: &mut [usize], dirty: &mut IntegerSet) {
 			IrOp::Read { memory } => acc = *memory.slice.get(acc).unwrap_or(&0),
 			&IrOp::SaveB { out } => wr[out] = b,
 			&IrOp::OrB => b |= acc,
+			&IrOp::BreakZero => {
+				if acc == 0 {
+					break;
+				}
+			}
 		}
 	}
 }
@@ -222,6 +227,7 @@ pub enum IrOp {
 	Read { memory: ThinArc<(), usize> },
 	SaveB { out: usize },
 	OrB,
+	BreakZero,
 }
 
 impl IrOp {}
@@ -246,6 +252,7 @@ impl fmt::Debug for IrOp {
 			IrOp::Read { .. } => fmt0(f, "(read [_])"),
 			IrOp::SaveB { out } => fmt1(f, "save-b", out),
 			IrOp::OrB => fmt0(f, "or-b"),
+			IrOp::BreakZero => fmt0(f, "break-zero"),
 		}
 	}
 }

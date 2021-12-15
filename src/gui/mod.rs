@@ -45,6 +45,7 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 		("splitter", || Box::new(Splitter::new())),
 		("merger", || Box::new(Merger::new(a()))),
 		("constant", || Box::new(Constant::new(a(), 0))),
+		("controlled buffer", || Box::new(ControlledBuffer::new())),
 		("rom", || Box::new(ReadOnlyMemory::default())),
 	]
 };
