@@ -7,7 +7,7 @@ use eframe::egui::paint::{CircleShape, Mesh, RectShape, Rgba};
 use eframe::egui::{Align2, Color32, Pos2, Rect, Shape, Stroke, TextStyle, Vec2};
 
 const IN_NOT: &[PointOffset] = &[PointOffset::new(-1, 0)];
-const OUT: &[PointOffset] = &[PointOffset::new(1, 0)];
+const OUT: [PointOffset; 1] = [PointOffset::new(1, 0)];
 const CENTER: &[PointOffset] = &[PointOffset::new(0, 0)];
 
 macro_rules! impl_cc {
@@ -15,16 +15,23 @@ macro_rules! impl_cc {
 		#[typetag::serde]
 		impl CircuitComponent for $name {
 			fn input_points(&self) -> Box<[PointOffset]> {
-				let i = i16::from(self.inputs.get());
-				(-i / 2..0)
-					.chain((i % 2 != 0).then(|| 0))
-					.chain(1..=i / 2)
-					.map(|y| PointOffset::new(-1, y.try_into().unwrap()))
+				gate_input_y_offsets(self.inputs.get())
+					.map(|(i, y)| {
+						PointOffset::new(
+							-[1, 2][usize::from(self.is_input_inverted(i))],
+							y.try_into().unwrap(),
+						)
+					})
 					.collect()
 			}
 
 			fn output_points(&self) -> Box<[PointOffset]> {
-				$out.into()
+				if self.is_output_inverted() {
+					[PointOffset::new(2, 0)]
+				} else {
+					[PointOffset::new(1, 0)]
+				}
+				.into()
 			}
 
 			fn input_name(&self, index: usize) -> Box<str> {
@@ -45,6 +52,30 @@ macro_rules! impl_cc {
 			}
 		}
 	};
+}
+
+fn gate_input_y_offsets(count: u8) -> impl Iterator<Item = (u8, i16)> {
+	let i = i16::from(count);
+	(-i / 2..0)
+		.chain((i % 2 != 0).then(|| 0))
+		.chain(1..=i / 2)
+		.enumerate()
+		.map(|(i, y)| (i.try_into().unwrap(), y))
+}
+
+fn draw_not_ports(draw: Draw, invert_out: bool, invert_in: impl Iterator<Item = i16>) {
+	let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
+	let stroke = stroke(alpha);
+	let radius = 8.0;
+	let fill = fill(alpha);
+	let draw = |center| painter.add(CircleShape { center, radius, fill, stroke });
+	if invert_out {
+		draw(pos + dir.rotate_vec2(Vec2::new(24.0, 0.0)));
+	}
+	for i in invert_in {
+		let y = f32::from(i) * 16.0;
+		draw(pos + dir.rotate_vec2(Vec2::new(-24.0, y)));
+	}
 }
 
 impl_cc!(AndGate, IN, OUT, ((-1, -1), (1, 1)));
@@ -70,6 +101,10 @@ impl ComponentPlacer for AndGate {
 		painter.line_segment([top_left, bottom_left], stroke);
 		painter.line_segment([top_left, top_left + offt], stroke);
 		painter.line_segment([bottom_left, bottom_left + offt], stroke);
+
+		let inv_in = gate_input_y_offsets(self.inputs.get())
+			.filter_map(|(i, y)| self.is_input_inverted(i as u8).then(|| y));
+		draw_not_ports(draw, self.is_output_inverted(), inv_in);
 	}
 }
 
@@ -132,6 +167,10 @@ impl ComponentPlacer for OrGate {
 		v.push(v[0]);
 		painter.add(Shape::Mesh(mesh));
 		painter.add(Shape::line(v, stroke));
+
+		let inv_in = gate_input_y_offsets(self.inputs.get())
+			.filter_map(|(i, y)| self.is_input_inverted(i as u8).then(|| y));
+		draw_not_ports(draw, self.is_output_inverted(), inv_in);
 	}
 }
 
@@ -206,6 +245,10 @@ impl ComponentPlacer for XorGate {
 			})
 			.collect();
 		painter.add(Shape::line(v, stroke));
+
+		let inv_in = gate_input_y_offsets(self.inputs.get())
+			.filter_map(|(i, y)| self.is_input_inverted(i as u8).then(|| y));
+		draw_not_ports(draw, self.is_output_inverted(), inv_in);
 	}
 }
 
