@@ -173,7 +173,8 @@ impl Ic {
 			| IrOp::Srli { .. }
 			| IrOp::Load { .. }
 			| IrOp::Read { .. }
-			| IrOp::OrB => return Some(op.clone()),
+			| IrOp::OrB
+			| IrOp::BreakZero => return Some(op.clone()),
 		};
 		if ad == usize::MAX {
 			return None;

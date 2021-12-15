@@ -642,6 +642,55 @@ impl ComponentPlacer for ReadOnlyMemory {
 	}
 }
 
+#[typetag::serde]
+impl CircuitComponent for ControlledBuffer {
+	fn input_points(&self) -> Box<[PointOffset]> {
+		[PointOffset::new(-1, 0), PointOffset::new(0, -1)].into()
+	}
+
+	fn output_points(&self) -> Box<[PointOffset]> {
+		OUT.into()
+	}
+
+	fn input_name(&self, index: usize) -> Box<str> {
+		["Input", "Select"][index].into()
+	}
+
+	fn output_name(&self, index: usize) -> Box<str> {
+		["Output"][index].into()
+	}
+
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		dir * RelativeAabb::new(PointOffset::new(-1, 0), PointOffset::new(1, 0))
+	}
+}
+
+#[typetag::serde]
+impl ComponentPlacer for ControlledBuffer {
+	fn name(&self) -> Box<str> {
+		"controlled buffer".into()
+	}
+
+	fn draw(&self, draw: Draw) {
+		let Draw { painter, alpha, position: pos, direction: dir, .. } = draw;
+		let stroke = stroke(alpha);
+
+		painter.add(Shape::LineSegment {
+			points: [pos, pos + dir.rotate_vec2(Vec2::new(0.0, -16.0))],
+			stroke: Stroke::new(3.0, Color32::BLUE),
+		});
+
+		let mut v = Vec::new();
+
+		let verts = [(-16.0, 7.0), (-16.0, -7.0), (16.0, 0.0)];
+		v.extend(verts.into_iter().rev().map(|(x, y)| Pos2::new(x, y)));
+
+		v.iter_mut()
+			.for_each(|e| *e = pos + dir.rotate_vec2(e.to_vec2()));
+		painter.add(Shape::convex_polygon(v, fill(alpha), stroke));
+	}
+}
+
 pub(super) fn color_alpha<C>(color: C, alpha: f32) -> C
 where
 	C: From<Rgba> + Into<Rgba>,

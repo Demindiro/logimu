@@ -1,9 +1,11 @@
 mod constant;
+mod controlled_buffer;
 mod merger;
 mod rom;
 mod splitter;
 
 pub use constant::*;
+pub use controlled_buffer::*;
 pub use merger::*;
 pub use rom::*;
 pub use splitter::*;
