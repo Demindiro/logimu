@@ -14,6 +14,7 @@ impl CopiedProperties {
 				PropertyValue::Mask { value, .. } => SetProperty::Mask(value.clone()),
 				PropertyValue::Str { value } => SetProperty::Str(value.clone()),
 				PropertyValue::Bool { value } => SetProperty::Bool(value.clone()),
+				PropertyValue::Enum { value, .. } => SetProperty::Enum(value.clone()),
 			};
 			let _ = to.set_property(&p.name, v);
 		}

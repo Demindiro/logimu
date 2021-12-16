@@ -1,7 +1,8 @@
-use crate::circuit::{CircuitComponent, Direction, PointOffset, RelativeAabb};
+use crate::circuit::{CircuitComponent, Direction, Point, PointOffset, RelativeAabb};
 use crate::impl_dyn;
 use crate::simulator::{
-	ir::Value, Component, ExternalType, GenerateIr, InputType, OutputType, Property, SetProperty,
+	ir::Value, Component, ExternalType, GenerateIr, InputType, NexusHandle, OutputType, Property,
+	SetProperty, State,
 };
 use core::any::Any;
 use core::ops::Mul;
@@ -40,10 +41,15 @@ where
 pub struct Draw<'a> {
 	pub painter: &'a Painter,
 	pub alpha: f32,
+	pub point: Point,
 	pub position: Pos2,
 	pub direction: Direction,
 	pub inputs: &'a [Value],
 	pub outputs: &'a [Value],
+	pub program_state: &'a State,
+	// Using a trait object because the alternative requires adding a bunch of generics and I
+	// cannot be bothered
+	pub nexus_at: &'a dyn Fn(Point) -> Option<NexusHandle>,
 }
 
 impl_dyn! {

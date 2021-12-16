@@ -734,6 +734,70 @@ impl ComponentPlacer for ControlledBuffer {
 	}
 }
 
+#[typetag::serde]
+impl CircuitComponent for Probe {
+	fn input_points(&self) -> Box<[PointOffset]> {
+		[PointOffset::new(1, 0)].into()
+	}
+
+	fn output_points(&self) -> Box<[PointOffset]> {
+		[].into()
+	}
+
+	fn input_name(&self, index: usize) -> Box<str> {
+		assert!(index < 1);
+		"Output".into()
+	}
+
+	fn output_name(&self, _: usize) -> Box<str> {
+		panic!()
+	}
+
+	fn aabb(&self, dir: Direction) -> RelativeAabb {
+		dir * RelativeAabb::new(PointOffset::new(0, 0), PointOffset::new(1, 0))
+	}
+}
+
+#[typetag::serde]
+impl ComponentPlacer for Probe {
+	fn name(&self) -> Box<str> {
+		"probe".into()
+	}
+
+	fn draw(&self, draw: Draw) {
+		let Draw {
+			painter,
+			alpha,
+			position: pos,
+			direction: dir,
+			program_state,
+			nexus_at,
+			point,
+			..
+		} = draw;
+		let value = (point + dir * self.input_points()[0])
+			.and_then(nexus_at)
+			.map_or(Value::Floating, |n| program_state.read_nexus(n));
+		painter.text(
+			pos,
+			Align2::CENTER_CENTER,
+			match value {
+				Value::Set(n) => match self.display_mode {
+					// TODO account for bit count
+					DisplayMode::Hex => format!("{:0w$x}", n, w = 8),
+					DisplayMode::Binary => format!("{:0w$b}", n, w = 8),
+					DisplayMode::SignedDecimal => (n as isize).to_string(),
+					DisplayMode::UnsignedDecimal => n.to_string(),
+				},
+				Value::Floating => "-".to_string(),
+				Value::Short => "E".to_string(),
+			},
+			TextStyle::Monospace,
+			color_alpha(Color32::LIGHT_GRAY, alpha),
+		);
+	}
+}
+
 pub(super) fn color_alpha<C>(color: C, alpha: f32) -> C
 where
 	C: From<Rgba> + Into<Rgba>,

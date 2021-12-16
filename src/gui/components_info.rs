@@ -88,6 +88,20 @@ impl ComponentsInfo {
 							changed.push((prop.name, SetProperty::Bool(value)));
 						}
 					}
+					PropertyValue::Enum { value, options } => {
+						ui.horizontal(|ui| {
+							let mut it = options.into_vec().into_iter();
+							for opt in &mut it {
+								if ui.selectable_label(value == opt, &opt).clicked() {
+									changed.push((prop.name, SetProperty::Enum(opt)));
+									break;
+								}
+							}
+							for opt in it {
+								let _ = ui.selectable_label(value == opt, opt);
+							}
+						});
+					}
 				}
 			}
 		};
