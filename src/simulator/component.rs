@@ -55,6 +55,7 @@ pub enum PropertyValue {
 	Int { value: i64, range: RangeInclusive<i64> },
 	Str { value: Box<str> },
 	Mask { value: usize },
+	Bool { value: bool },
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +63,7 @@ pub enum SetProperty {
 	Int(i64),
 	Str(Box<str>),
 	Mask(usize),
+	Bool(bool),
 }
 
 impl SetProperty {
@@ -82,6 +84,13 @@ impl SetProperty {
 	pub fn as_mask(&self) -> Option<usize> {
 		match self {
 			Self::Mask(i) => Some(*i),
+			_ => None,
+		}
+	}
+
+	pub fn as_bool(&self) -> Option<bool> {
+		match self {
+			Self::Bool(b) => Some(*b),
 			_ => None,
 		}
 	}

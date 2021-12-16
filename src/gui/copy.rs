@@ -13,6 +13,7 @@ impl CopiedProperties {
 				PropertyValue::Int { value, .. } => SetProperty::Int(value.clone()),
 				PropertyValue::Mask { value, .. } => SetProperty::Mask(value.clone()),
 				PropertyValue::Str { value } => SetProperty::Str(value.clone()),
+				PropertyValue::Bool { value } => SetProperty::Bool(value.clone()),
 			};
 			let _ = to.set_property(&p.name, v);
 		}

@@ -1,6 +1,7 @@
 use core::iter::FromIterator;
 use core::ops::BitOrAssign;
 use core::{fmt, mem};
+use serde::{Deserialize, Serialize};
 
 /// A form of collection optimized for storing unique integers within a limited range and fast
 /// iteration of thise numbers.
@@ -108,5 +109,66 @@ impl fmt::Debug for IntegerSet {
 impl BitOrAssign<Self> for IntegerSet {
 	fn bitor_assign(&mut self, rhs: Self) {
 		self.union(rhs)
+	}
+}
+
+/// An integer set optimized for `u8`
+#[derive(Default, Serialize, Deserialize)]
+pub struct IntegerSetU8([u128; 2]);
+
+impl IntegerSetU8 {
+	/// Insert a number in this set.
+	///
+	/// If the set did not have this number, `true` is returned. Otherwise, `false` is returned.
+	pub fn insert(&mut self, num: u8) -> bool {
+		let (i, m) = self.index_mask(num);
+		let had = self.contains(num);
+		self.0[i] |= m;
+		!had
+	}
+
+	/// Remove a number from this set.
+	///
+	/// If the set did have this number, `true` is returned. Otherwise, `false` is returned.
+	pub fn remove(&mut self, num: u8) -> bool {
+		let (i, m) = self.index_mask(num);
+		let had = self.contains(num);
+		self.0[i] &= !m;
+		had
+	}
+
+	/// Check if this set contains the given number.
+	pub fn contains(&self, num: u8) -> bool {
+		let (i, m) = self.index_mask(num);
+		self.0[i] & m > 0
+	}
+
+	/// Iterate over all numbers in this set.
+	#[allow(dead_code)]
+	pub fn iter(&self) -> IntegerSetU8Iter {
+		IntegerSetU8Iter { set: &self, index: Some(0) }
+	}
+
+	fn index_mask(&self, n: u8) -> (usize, u128) {
+		(usize::from(n / 128), 1 << n % 128)
+	}
+}
+
+pub struct IntegerSetU8Iter<'a> {
+	set: &'a IntegerSetU8,
+	index: Option<u8>,
+}
+
+impl Iterator for IntegerSetU8Iter<'_> {
+	type Item = u8;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		while let Some(i) = self.index {
+			self.index = i.checked_add(1);
+			if self.set.0[usize::from(i / 128)] & 1 << (i % 128) > 0 {
+				return Some(i);
+			}
+		}
+		None
 	}
 }

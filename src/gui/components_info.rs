@@ -83,6 +83,11 @@ impl ComponentsInfo {
 							}
 						}
 					}
+					PropertyValue::Bool { mut value } => {
+						if ui.checkbox(&mut value, name).changed() {
+							changed.push((prop.name, SetProperty::Bool(value)));
+						}
+					}
 				}
 			}
 		};

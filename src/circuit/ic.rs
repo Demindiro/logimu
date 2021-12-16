@@ -148,7 +148,11 @@ impl Ic {
 			| IrOp::And { a }
 			| IrOp::Or { a }
 			| IrOp::Xor { a }
+			| IrOp::NotAnd { a }
+			| IrOp::NotOr { a }
+			| IrOp::NotXor { a }
 			| IrOp::Copy { a }
+			| IrOp::CopyNot { a }
 			| IrOp::SaveB { out: a } => {
 				let f = |a: &[_], &k, b: &[_], c: &[_]| {
 					a.iter()
@@ -167,7 +171,8 @@ impl Ic {
 					gen.memory_size + *a
 				}
 			}
-			IrOp::Andi { .. }
+			IrOp::Not
+			| IrOp::Andi { .. }
 			| IrOp::Xori { .. }
 			| IrOp::Slli { .. }
 			| IrOp::Srli { .. }
