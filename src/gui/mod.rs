@@ -47,6 +47,7 @@ const COMPONENTS: &[(&'static str, fn() -> Box<dyn ComponentPlacer>)] = {
 		("constant", || Box::new(Constant::new(a(), 0))),
 		("controlled buffer", || Box::new(ControlledBuffer::new())),
 		("rom", || Box::new(ReadOnlyMemory::default())),
+		("probe", || Box::new(Probe::default())),
 	]
 };
 
@@ -552,6 +553,9 @@ impl epi::App for App {
 					direction: d,
 					inputs: &self.inputs,
 					outputs: &self.outputs,
+					program_state: &self.program_state,
+					point: p,
+					nexus_at: &|p| self.circuit.wire_endpoints(p).next().map(|(.., n)| n),
 				};
 				c.draw(draw);
 				let aabb = c.aabb(d);
@@ -683,6 +687,9 @@ impl epi::App for App {
 						direction: self.component_direction,
 						inputs: &self.inputs,
 						outputs: &self.outputs,
+						program_state: &self.program_state,
+						point,
+						nexus_at: &|p| self.circuit.wire_endpoints(p).next().map(|(.., n)| n),
 					};
 					c.draw(draw);
 
@@ -720,6 +727,9 @@ impl epi::App for App {
 						direction: d,
 						inputs: &self.inputs,
 						outputs: &self.outputs,
+						program_state: &self.program_state,
+						point: p,
+						nexus_at: &|p| self.circuit.wire_endpoints(p).next().map(|(.., n)| n),
 					};
 					c.draw(draw);
 					if e.drag_released() && !e.dragged_by(PointerButton::Primary) {

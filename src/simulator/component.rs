@@ -56,6 +56,7 @@ pub enum PropertyValue {
 	Str { value: Box<str> },
 	Mask { value: usize },
 	Bool { value: bool },
+	Enum { value: Box<str>, options: Box<[Box<str>]> },
 }
 
 #[derive(Clone, Debug)]
@@ -64,6 +65,7 @@ pub enum SetProperty {
 	Str(Box<str>),
 	Mask(usize),
 	Bool(bool),
+	Enum(Box<str>),
 }
 
 impl SetProperty {
@@ -91,6 +93,13 @@ impl SetProperty {
 	pub fn as_bool(&self) -> Option<bool> {
 		match self {
 			Self::Bool(b) => Some(*b),
+			_ => None,
+		}
+	}
+
+	pub fn into_enum(self) -> Option<Box<str>> {
+		match self {
+			Self::Enum(s) => Some(s),
 			_ => None,
 		}
 	}
