@@ -494,13 +494,15 @@ impl epi::App for App {
 				let (x, y) = (f32::from(point.x), f32::from(point.y));
 				Pos2::new(rect.min.x + x * 16.0, rect.min.y + y * 16.0) + self.circuit_offset
 			};
-			let draw_aabb = |point: circuit::Point, aabb: circuit::RelativeAabb, stroke: Stroke| {
-				let delta = Vec2::new(8.0, 8.0);
-				let (min, max) = ((point + aabb.min).unwrap(), (point + aabb.max).unwrap());
-				let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
-				let rect = Rect { min, max };
-				paint.rect_stroke(rect, 8.0, stroke);
-			};
+			let draw_aabb =
+				|point: circuit::Point, aabb: circuit::RelativeAabb, stroke: Stroke| -> Rect {
+					let delta = Vec2::new(8.0, 8.0);
+					let (min, max) = ((point + aabb.min).unwrap(), (point + aabb.max).unwrap());
+					let (min, max) = (point2pos(min) - delta, point2pos(max) + delta);
+					let rect = Rect { min, max };
+					paint.rect_stroke(rect, 8.0, stroke);
+					rect
+				};
 
 			let wire_stroke = Stroke::new(3.0, Color32::WHITE);
 			let selected_color = Color32::LIGHT_BLUE.linear_multiply(0.5);
@@ -760,10 +762,27 @@ impl epi::App for App {
 			}
 
 			// Draw boxes around the selected components
+			// Also add a rotate button at the top-left corner
 			let stroke = Stroke::new(2.0, selected_color);
 			for h in self.selected_components.iter() {
 				let (c, p, d) = self.circuit.component(*h).unwrap();
-				draw_aabb(p, c.aabb(d), stroke);
+				let mut rect = draw_aabb(p, c.aabb(d), stroke);
+				rect.max.x += 8.0;
+				rect.min.y -= 14.0;
+				rect.min.x = rect.max.x;
+				rect.max.y = rect.min.y;
+				let button = Label::new("⟳")
+					.text_color(Color32::WHITE)
+					.sense(Sense::click());
+				if ui.put(rect, button).clicked() {
+					let (_, pos, dir) = self
+						.circuit
+						.component(*h)
+						.expect("invalid selected component");
+					self.circuit
+						.move_component(*h, pos, dir.rotate_clockwise())
+						.unwrap();
+				}
 			}
 
 			// Draw a box around the hovered component
